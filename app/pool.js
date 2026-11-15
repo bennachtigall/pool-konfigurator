@@ -2,7 +2,7 @@
 // Koordinaten: x = Länge, z = Breite, y = Höhe. Beckenkante liegt bei y = 0, der Boden bei y = -Tiefe.
 // Alle Maße in Metern. Maße, Farben und Treppen-Richtwerte kommen aus der JSON-Datei.
 import * as THREE from 'three';
-import { wasserNormal } from './materialien.js';
+import { wasserNormal, kaustikTextur } from './materialien.js';
 
 export const WASSERSTAND = -0.10; // Vorgabe: Wasserspiegel unter der Beckenkante (m); je nach Skimmer überschrieben (cfg.wasserstand)
 
@@ -157,12 +157,28 @@ export function buildPool(cfg) {
   waende.receiveShadow = true;
   group.add(boden, waende);
 
-  // Wasser
-  const wasser = new THREE.Mesh(
-    new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.01))).rotateX(-Math.PI / 2),
-    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(cfg.wasserHex ?? 0x2e9fd8).multiplyScalar(0.8), transparent: true, opacity: 0.8, roughness: 0.12, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.15, ior: 1.33, specularIntensity: 0.5, envMapIntensity: 0.45, normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.07, 0.07) })
-  );
-  wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = 2;
+  // Wasser: bei hoher Qualität echtes Brechen des Lichts (Transmission) mit Farbtiefe je nach Wassertiefe,
+  // sonst einfache halbtransparente Fläche (schneller auf schwacher Grafik)
+  const wasserFarbe = new THREE.Color(cfg.wasserHex ?? 0x2e9fd8);
+  const wasserMat = cfg.realistisch
+    ? new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 1, thickness: T * 0.9, ior: 1.333, roughness: 0.02,
+        attenuationColor: wasserFarbe, attenuationDistance: 1.6, specularIntensity: 1, envMapIntensity: 1,
+        normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.025, 0.025) })
+    : new THREE.MeshPhysicalMaterial({ color: wasserFarbe.clone().multiplyScalar(0.8), transparent: true, opacity: 0.8, roughness: 0.12, clearcoat: 0.25, ior: 1.33,
+        specularIntensity: 0.5, envMapIntensity: 0.45, normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.07, 0.07) });
+  const wasser = new THREE.Mesh(new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.01))).rotateX(-Math.PI / 2), wasserMat);
+  // Lichtmuster am Boden (nur bei hoher Qualität)
+  if (cfg.realistisch) {
+    const k = kaustikTextur().clone(); k.needsUpdate = true; k.repeat.set(L / 1.6, B / 1.6);
+    const kaustik = new THREE.Mesh(new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.02))).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: k, color: 0x9fd8ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+    // UVs in Weltmetern, damit das Muster nicht gestreckt ist
+    const pos = kaustik.geometry.attributes.position, uv = kaustik.geometry.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / L + 0.5, pos.getZ(i) / B + 0.5);
+    kaustik.position.y = -T + 0.004; kaustik.name = 'Kaustik'; kaustik.userData.kaustik = k;
+    group.add(kaustik);
+  }
+  wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = cfg.realistisch ? 0 : 2;
   group.add(wasser);
 
   // Schlichte Beckenkante, solange keine Umrandung gewählt ist

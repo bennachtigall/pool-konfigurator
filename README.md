@@ -13,11 +13,12 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 ## Bedienung
 
 - **Ansicht:** Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.
+- **Kundengarten (Foto):** Unter „Darstellung → Umgebung“ ein Gartenfoto laden. Kamerahöhe, Neigung und Bildwinkel an das Foto anpassen, den Pool mit Maus oder Finger an die gewünschte Stelle ziehen (Mausrad dreht ihn), Sonne und Helligkeit passend einstellen. Screenshot und Zusammenfassung enthalten Foto und Pool. Das Foto bleibt nur auf diesem Rechner, es wird nicht hochgeladen und nicht mit der Konfiguration gespeichert.
 - **Umgebung:** Unter „Darstellung“ lässt sich zwischen Rasen (Garten) und freiem 3D-Modell ohne Rasen umschalten. Das freie Modell zeigt den Pool als geschlossenen Körper und lässt sich auch von unten ansehen.
 - **Schnitt:** Im freien Modell lässt sich bei Systemstein-, Kompakt- und Polypropylen-Becken ein Quer- oder Längsschnitt zeigen (Schichten des Wandaufbaus, Lage per Regler). Der Aufbau steht pro Pool im Feld `aufbau` der JSON-Datei. Die Folie ist im Schnitt überhöht dargestellt.
 - **Beleuchtung:** Meist an einer Seite (Standard: 2 Scheinwerfer an der langen Seite). Seite und Lage entlang der Wand sind wählbar.
 - **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle (24 m², bestätigt) steht in `skimmer_regel` in der JSON-Datei.
-- **Qualität:** Unter „Darstellung“ gibt es vier Stufen: Niedrig, Mittel, Hoch (Standard, mit Himmel und Spiegelungen) und Ultra (sehr scharf, bewegtes Wasser). Auf schwacher Grafik runterschalten.
+- **Qualität:** Unter „Darstellung“ gibt es vier Stufen: Niedrig, Mittel, Hoch (Standard: Himmel, Spiegelungen, Lichtbrechung im Wasser, Lichtmuster am Boden, Umgebungsverdeckung und Kantenglättung) und Ultra (sehr scharf, bewegtes Wasser). Auf schwacher Grafik runterschalten.
 - **Öffnen und Verschieben:** Überdachung, Rollabdeckungen und WaluDeck lassen sich mit einem Regler öffnen bzw. verschieben.
 - **Nicht kombinierbare Optionen** sind ausgegraut, darunter steht der Grund.
 - **Ergebnis festhalten:** Zusammenfassung drucken oder als PDF sichern, Screenshot (PNG), 3D-Modell (GLB, der Pool immer als geschlossener Körper ohne Rasen), Konfiguration speichern und wieder laden. Alles wird direkt heruntergeladen, nichts hochgeladen.
@@ -35,6 +36,7 @@ app/
   main.js                 Zustand, Bedienfeld, 3D-Szene, Ergebnis festhalten
   pool.js                 Becken (rechteck, rund, oval), Treppen, Skimmer, Düsen, LED
   koerper.js              geschlossener Poolkörper (Styroporsteine, PP-Fertigbecken) für das freie Modell und den GLB-Export
+  foto.js                 Kundengarten-Foto: Kamera, unsichtbarer Boden mit Schatten, Bild zusammensetzen
   materialien.js, umgebung.js   Wasser-Normalmap, Steinstruktur, Himmel und Spiegelungskarten
   schnitt.js              Quer-/Längsschnitt mit Schichten des Wandaufbaus
   umrandung.js            Beckenrandsteine
@@ -42,7 +44,7 @@ app/
   abdeckung.js            Safty, WaluDeck, Roll'Top 100/300
   regeln.js               Kombinierbarkeit, liest die Felder "bedingungen" aus der JSON
   export.js               Screenshot-, GLB-, Konfigurations-Dateien
-  lib/                    Three.js 0.187.0 lokal (inkl. Sky, RoomEnvironment, GLTFExporter, OrbitControls) (MIT-Lizenz, siehe THREE-LICENSE.txt)
+  lib/                    Three.js 0.187.0 lokal (inkl. Sky, RoomEnvironment, GLTFExporter, OrbitControls und Nachbearbeitung GTAO/SMAA) (MIT-Lizenz, siehe THREE-LICENSE.txt)
 ```
 
 ## Produktdaten pflegen

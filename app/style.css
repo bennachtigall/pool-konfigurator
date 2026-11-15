@@ -95,3 +95,11 @@ input[type="text"] { width: 100%; padding: 9px 8px; font-size: 15px; border: 1px
 }
 
 input[type="range"] { width: 100%; margin: 6px 0 0; }
+
+/* Foto-Modus */
+main { background: #2b2f33; }
+#foto-bild { position: absolute; object-fit: fill; pointer-events: none; user-select: none; }
+#ansicht { position: relative; }
+#panel h3 { margin: 14px 0 2px; font-size: 13px; color: var(--text); }
+.knopf.hell { background: #fff; color: var(--blau-dunkel); border: 1px solid var(--rand); }
+.knopf.hell:hover { background: var(--grau); }

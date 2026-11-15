@@ -19,7 +19,7 @@ export function wasserNormal() {
   }
   g.putImageData(img, 0, 0);
   _wasser = new THREE.CanvasTexture(c);
-  _wasser.wrapS = _wasser.wrapT = THREE.RepeatWrapping; _wasser.repeat.set(0.45, 0.45); _wasser.anisotropy = 8;
+  _wasser.wrapS = _wasser.wrapT = THREE.RepeatWrapping; _wasser.repeat.set(1.4, 1.4); // feine Wellen (ca. 70 cm Kachel) _wasser.anisotropy = 8;
   return _wasser;
 }
 
@@ -34,4 +34,30 @@ export function rauTextur(korn = 1) {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 2); t.anisotropy = 8;
   return (_rau[korn] = t);
+}
+
+/**
+ * Lichtmuster am Beckenboden (Kaustik): kachelbares Voronoi-Netz mit hellen, dünnen Linien.
+ * Wird additiv über den Boden gelegt und in der Qualität "Ultra" langsam bewegt.
+ */
+let _kaustik = null;
+export function kaustikTextur() {
+  if (_kaustik) return _kaustik;
+  const N = 256, Z = 26, c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  const pts = Array.from({ length: Z }, () => [Math.random() * N, Math.random() * N]);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let d1 = 1e9, d2 = 1e9;
+    for (const [px, py] of pts) for (let ox = -N; ox <= N; ox += N) for (let oy = -N; oy <= N; oy += N) { // kachelbar
+      const dx = x - px - ox, dy = y - py - oy, d = dx * dx + dy * dy;
+      if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    const kante = Math.sqrt(d2) - Math.sqrt(d1);              // klein an den Zellgrenzen
+    const v = Math.max(0, 1 - kante / 6) ** 2.2 * 255;
+    const i = (y * N + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  _kaustik = new THREE.CanvasTexture(c);
+  _kaustik.wrapS = _kaustik.wrapT = THREE.RepeatWrapping; _kaustik.colorSpace = THREE.SRGBColorSpace; _kaustik.anisotropy = 8;
+  return _kaustik;
 }
