@@ -160,12 +160,15 @@ export function buildPool(cfg) {
   // Wasser: bei hoher Qualität echtes Brechen des Lichts (Transmission) mit Farbtiefe je nach Wassertiefe,
   // sonst einfache halbtransparente Fläche (schneller auf schwacher Grafik)
   const wasserFarbe = new THREE.Color(cfg.wasserHex ?? 0x2e9fd8);
-  const wasserMat = cfg.realistisch
-    ? new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 1, thickness: T * 0.9, ior: 1.333, roughness: 0.02,
-        attenuationColor: wasserFarbe, attenuationDistance: 1.6, specularIntensity: 1, envMapIntensity: 1,
-        normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.025, 0.025) })
-    : new THREE.MeshPhysicalMaterial({ color: wasserFarbe.clone().multiplyScalar(0.8), transparent: true, opacity: 0.8, roughness: 0.12, clearcoat: 0.25, ior: 1.33,
-        specularIntensity: 0.5, envMapIntensity: 0.45, normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.07, 0.07) });
+  // Oberfläche: spiegelt Himmel/Umgebung (Fresnel), ist von oben gut durchsichtig. Keine Lichtbrechung über die
+  // ganze Tiefe mehr (die verschob bei einer flachen Wasserfläche das Bild von Wand und Stufen unrealistisch).
+  const wasserMat = new THREE.MeshPhysicalMaterial({
+    color: wasserFarbe, transparent: true, opacity: cfg.realistisch ? 0.22 : 0.7,
+    roughness: 0.02, metalness: 0, ior: 1.333, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.02,
+    envMapIntensity: cfg.realistisch ? 0.8 : 0.45, depthWrite: false,
+    normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.06, 0.06) });
+  // Unter Wasser: Wand, Boden und Treppen werden mit der Tiefe gleichmäßig in Wasserfarbe getönt
+  if (cfg.realistisch) unterWasserToenung(wand, wasserFarbe, WS);
   const wasser = new THREE.Mesh(new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.01))).rotateX(-Math.PI / 2), wasserMat);
   // Lichtmuster am Boden (nur bei hoher Qualität)
   if (cfg.realistisch) {
@@ -178,7 +181,7 @@ export function buildPool(cfg) {
     kaustik.position.y = -T + 0.004; kaustik.name = 'Kaustik'; kaustik.userData.kaustik = k;
     group.add(kaustik);
   }
-  wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = cfg.realistisch ? 0 : 2;
+  wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = 2;
   group.add(wasser);
 
   // Schlichte Beckenkante, solange keine Umrandung gewählt ist
@@ -240,6 +243,7 @@ function baueEinstieg(group, { m, einstieg, seite, r, wand, edelstahl, ws }) {
   const w = Math.min(r.ecktreppe_schenkel_m, B * 0.7);
   const bank = r.sitzstufe_sitzbank;
   const doppelt = wand.clone(); doppelt.side = THREE.DoubleSide;
+  doppelt.onBeforeCompile = wand.onBeforeCompile; doppelt.customProgramCacheKey = wand.customProgramCacheKey; // Unterwasser-Tönung mitnehmen
 
   const block = (xa, xb, za, zb, oben) => { // massiver Block vom Boden bis zur Oberkante "oben"
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(xb - xa, oben + T, zb - za), wand);
@@ -299,4 +303,29 @@ function baueEinstieg(group, { m, einstieg, seite, r, wand, edelstahl, ws }) {
     else { const [za, zb] = zEcke(w); block(x0, x0 + i * d, za, zb, -h * i); }
   }
   if (mitBank) sitzbank(w);
+}
+
+/**
+ * Tönt ein Material unterhalb des Wasserspiegels: je tiefer, desto mehr Wasserfarbe und etwas dunkler
+ * (wie Licht, das im Wasser gestreut und geschluckt wird). Über Wasser bleibt die Farbe unverändert.
+ */
+function unterWasserToenung(mat, farbe, ws) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWasserFarbe = { value: farbe.clone().convertSRGBToLinear() };
+    shader.uniforms.uWS = { value: ws };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vWeltY;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWeltY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vWeltY;\nuniform vec3 uWasserFarbe;\nuniform float uWS;')
+      .replace('#include <opaque_fragment>', `
+        float tiefe = clamp((uWS - vWeltY) / 1.6, 0.0, 1.0);
+        float unter = step(vWeltY, uWS);
+        vec3 gefiltert = outgoingLight * normalize(uWasserFarbe + 0.02) * 1.5;           // Rot wird im Wasser zuerst geschluckt
+        outgoingLight = mix(outgoingLight, gefiltert, unter * (0.45 + 0.4 * tiefe));
+        outgoingLight = mix(outgoingLight, uWasserFarbe * 0.35, unter * 0.3 * tiefe);     // Streulicht in der Tiefe
+        outgoingLight *= 1.0 - unter * 0.2 * tiefe;
+        #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey = () => 'unterwasser' + ws.toFixed(3) + farbe.getHexString();
 }

@@ -13,7 +13,8 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 ## Bedienung
 
 - **Ansicht:** Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.
-- **Kundengarten (Foto):** Unter „Darstellung → Umgebung“ ein Gartenfoto laden. Kamerahöhe, Neigung und Bildwinkel an das Foto anpassen, den Pool mit Maus oder Finger an die gewünschte Stelle ziehen (Mausrad dreht ihn), Sonne und Helligkeit passend einstellen. Screenshot und Zusammenfassung enthalten Foto und Pool. Das Foto bleibt nur auf diesem Rechner, es wird nicht hochgeladen und nicht mit der Konfiguration gespeichert.
+- **Kundengarten 3D (zum Umschauen):** Unter „Darstellung → Umgebung“ 1–4 Gartenfotos oder ein 360°-Panorama laden. Daraus entsteht eine Rundum-Umgebung, in der man sich mit der Maus frei umschaut; nah am Pool liegt ein echter Boden (Rasen, Pflaster, Kies). Am besten vom späteren Pool-Standort aus fotografieren (Panorama oder je ein Foto nach vorn, rechts, hinten, links). Die Fotos wirken wie eine Kulisse – echte 3D-Formen von Bäumen oder Häusern lassen sich aus Fotos lokal nicht berechnen.
+- **Fotomontage (ein Foto):** Unter „Darstellung → Umgebung“ ein Gartenfoto laden. Kamerahöhe, Neigung und Bildwinkel an das Foto anpassen, den Pool mit Maus oder Finger an die gewünschte Stelle ziehen (Mausrad dreht ihn), Sonne und Helligkeit passend einstellen. Screenshot und Zusammenfassung enthalten Foto und Pool. Das Foto bleibt nur auf diesem Rechner, es wird nicht hochgeladen und nicht mit der Konfiguration gespeichert.
 - **Umgebung:** Unter „Darstellung“ lässt sich zwischen Rasen (Garten) und freiem 3D-Modell ohne Rasen umschalten. Das freie Modell zeigt den Pool als geschlossenen Körper und lässt sich auch von unten ansehen.
 - **Schnitt:** Im freien Modell lässt sich bei Systemstein-, Kompakt- und Polypropylen-Becken ein Quer- oder Längsschnitt zeigen (Schichten des Wandaufbaus, Lage per Regler). Der Aufbau steht pro Pool im Feld `aufbau` der JSON-Datei. Die Folie ist im Schnitt überhöht dargestellt.
 - **Beleuchtung:** Meist an einer Seite (Standard: 2 Scheinwerfer an der langen Seite). Seite und Lage entlang der Wand sind wählbar.
@@ -36,6 +37,7 @@ app/
   main.js                 Zustand, Bedienfeld, 3D-Szene, Ergebnis festhalten
   pool.js                 Becken (rechteck, rund, oval), Treppen, Skimmer, Düsen, LED
   koerper.js              geschlossener Poolkörper (Styroporsteine, PP-Fertigbecken) für das freie Modell und den GLB-Export
+  garten3d.js             Kundengarten 3D: Fotos zu Rundum-Bild zusammensetzen, Kuppel mit Boden, Belag um den Pool
   foto.js                 Kundengarten-Foto: Kamera, unsichtbarer Boden mit Schatten, Bild zusammensetzen
   materialien.js, umgebung.js   Wasser-Normalmap, Steinstruktur, Himmel und Spiegelungskarten
   schnitt.js              Quer-/Längsschnitt mit Schichten des Wandaufbaus

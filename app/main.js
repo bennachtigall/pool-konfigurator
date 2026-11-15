@@ -11,6 +11,7 @@ import { RenderPass } from './lib/postprocessing/RenderPass.js';
 import { GTAOPass } from './lib/postprocessing/GTAOPass.js';
 import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
+import { GARTEN_STANDARD, RICHTUNGEN, bilderHinzu, bildEntfernen, bildRichtung, gartenBilder, gartenUmgebung, gartenBoden } from './garten3d.js';
 import { FOTO_STANDARD, fotoLaden, fotoBild, fotoRechteck, fotoKamera, fotoBoden, sonnenRichtung, fotoZusammensetzen } from './foto.js';
 import { schnittPosition, schnittEbene, baueSchnittflaeche } from './schnitt.js';
 import { baueUmrandung, steinMasse } from './umrandung.js';
@@ -45,6 +46,7 @@ controls.minDistance = 0.6; // nah heranzoomen (z. B. für den Schnitt)
 controls.maxDistance = 45;
 controls.target.set(0, -0.3, 0);
 
+const hintergrund = new THREE.Scene(); // Himmel und Foto-Kuppel: eigene Ebene, ohne Umgebungsverdeckung
 const welt = new THREE.Group(); // Pool + Zubehör; im Foto-Modus verschiebbar und drehbar
 scene.add(welt);
 
@@ -58,7 +60,7 @@ sonne.shadow.camera.right = sonne.shadow.camera.top = 10;
 sonne.shadow.camera.far = 45;
 scene.add(sonne);
 const umg = baueUmgebungen(renderer); // Himmel + Spiegelungskarten
-scene.add(umg.sky);
+hintergrund.add(umg.sky);
 sonne.position.copy(umg.sonne).multiplyScalar(20); // Sonnenlicht passend zum Himmel
 sonne.shadow.bias = -0.0004; sonne.shadow.normalBias = 0.03; sonne.shadow.radius = 4; // weiche Schattenkanten
 scene.add(sonne.target);
@@ -91,6 +93,7 @@ function baueBoden(m, off) { // m.T = Beckentiefe
   if (boden) { welt.remove(boden); boden.traverse((o) => o.geometry && o.geometry.dispose()); }
   boden = new THREE.Group();
   if (zustand.umgebung === 'foto') { boden.add(fotoBoden(m, off, zustand.foto.schatten)); welt.add(boden); return; }
+  if (zustand.umgebung === 'garten3d' && gartenBilder().length) { boden.add(gartenBoden(m, off, zustand.garten)); welt.add(boden); return; }
   if (zustand.umgebung === 'frei') { // freies Modell: nur ein weicher Schatten auf neutralem Grund, kein Rasen
     const schatten = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.22 }));
     schatten.position.y = -m.T - 0.3; schatten.receiveShadow = true;
@@ -120,22 +123,32 @@ const QUALITAET = {
 let qualitaet = 'hoch';
 
 /** Himmel/Studio/Foto, Spiegelungen und Lichtstärke je nach Umgebung und Qualität. */
+let gartenKuppel = null, gartenEnv = null;
 function umgebungSetzen(modus) {
   const q = QUALITAET[qualitaet], frei = modus === 'frei', foto = modus === 'foto';
-  umg.sky.visible = modus === 'rasen';
-  scene.background = frei ? new THREE.Color(0xe6eaed) : foto ? null : null;
+  // Kundengarten 3D: Kuppel aus den Fotos (nur neu berechnet, wenn sich Fotos/Projektion ändern)
+  if (gartenKuppel) { hintergrund.remove(gartenKuppel); gartenKuppel.geometry.dispose(); gartenKuppel.material.dispose(); gartenKuppel = null; }
+  gartenEnv = null;
+  const garten = modus === 'garten3d' && daten ? gartenUmgebung(renderer, zustand.garten) : null;
+  if (garten) { gartenKuppel = garten.kuppel; gartenEnv = garten.env; hintergrund.add(gartenKuppel); }
+  umg.sky.visible = modus === 'rasen' || (modus === 'garten3d' && !garten);
+  scene.background = null;
+  hintergrund.background = frei ? new THREE.Color(0xe6eaed) : null; // Hintergrundfarbe liegt in der Hintergrund-Ebene
   scene.fog = modus === 'rasen' ? new THREE.Fog(0xc9dcec, 80, 600) : null;
-  scene.environment = q.env ? (frei ? umg.studioEnv : umg.himmelEnv) : null;
-  scene.environmentIntensity = frei ? 0.7 : 0.35;
+  scene.environment = q.env ? (frei ? umg.studioEnv : gartenEnv || umg.himmelEnv) : null;
+  scene.environmentIntensity = frei ? 0.7 : garten ? 0.9 : 0.35;
   hemi.intensity = q.env ? 0.2 : 0.9;
-  const hell = foto ? zustand.foto.helligkeit : 1;
+  const p = foto ? zustand.foto : modus === 'garten3d' ? zustand.garten : null;
+  const hell = p ? p.helligkeit : 1;
   sonne.intensity = (q.env ? 2.0 : 2.4) * hell;
-  renderer.toneMappingExposure = 0.7 * (foto ? hell : 1);
-  // Sonnenrichtung: im Foto-Modus frei einstellbar, damit die Schatten zum Foto passen
-  const dir = foto ? sonnenRichtung(zustand.foto) : umg.sonne;
+  // Im Kundengarten farbtreue Belichtung, damit die Fotos aussehen wie aufgenommen
+  renderer.toneMapping = garten ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = (garten ? 1.0 : 0.7) * hell;
+  // Sonnenrichtung: in Foto-Modi frei einstellbar, damit die Schatten zu den Fotos passen
+  const dir = p ? sonnenRichtung(p) : umg.sonne;
   sonne.target.position.copy(welt.position);
   sonne.position.copy(welt.position).addScaledVector(dir, 20);
-  const s = foto ? 12 : 10; sonne.shadow.camera.left = sonne.shadow.camera.bottom = -s; sonne.shadow.camera.right = sonne.shadow.camera.top = s; sonne.shadow.camera.updateProjectionMatrix();
+  const s = p ? 12 : 10; sonne.shadow.camera.left = sonne.shadow.camera.bottom = -s; sonne.shadow.camera.right = sonne.shadow.camera.top = s; sonne.shadow.camera.updateProjectionMatrix();
 }
 
 function setzeQualitaet(name) {
@@ -157,7 +170,9 @@ let composer = null, gtao = null;
 function composerHolen() {
   if (composer) return composer;
   composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new RenderPass(hintergrund, camera));
+  const vorn = new RenderPass(scene, camera); vorn.clear = false; // Pool & Co. über den Hintergrund
+  composer.addPass(vorn);
   gtao = new GTAOPass(scene, camera, 512, 512);
   gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
   gtao.blendIntensity = 0.8;
@@ -173,7 +188,12 @@ function bildRendern() {
     const c = composerHolen(), pr = renderer.getPixelRatio(), s = renderer.getSize(new THREE.Vector2());
     c.setPixelRatio(pr); c.setSize(s.x, s.y);
     c.render();
-  } else renderer.render(scene, camera);
+  } else {
+    renderer.autoClear = false; renderer.clear();
+    renderer.render(hintergrund, camera);
+    renderer.render(scene, camera);
+    renderer.autoClear = true;
+  }
 }
 
 // ---------- Rendern nur bei Bedarf (schont den Laptop-Akku) ----------
@@ -222,6 +242,7 @@ const zustand = {
   ueberdachung: '', ueProfil: '', ueSchiene: 'links', ueOeffnung: 0, abOeffnung: 0, // Öffnungsgrade 0 (zu) bis 1 (offen)
   abdeckung: '', ab: {},
   umgebung: 'rasen', // 'rasen' (Garten), 'frei' (freies 3D-Modell ohne Rasen) oder 'foto' (Kundengarten-Foto)
+  garten: { ...GARTEN_STANDARD }, // Kundengarten 3D: Projektion der Fotos, Boden, Sonne (die Fotos selbst werden nicht gespeichert)
   foto: { ...FOTO_STANDARD }, // Kamera, Lage des Pools und Sonne im Foto (das Foto selbst wird nicht gespeichert)
   projekt: '', // optionaler Projektname für die Zusammenfassung (bleibt lokal)
 };
@@ -356,6 +377,7 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12, technik) : null);
   umgebungSetzen(zustand.umgebung);
   controls.enabled = !foto;
+  controls.maxDistance = zustand.umgebung === 'garten3d' ? zustand.garten.radius * 0.55 : 45; // im Garten innerhalb der Foto-Kuppel bleiben
   if (foto) fotoKamera(camera, zustand.foto);
   controls.maxPolarAngle = frei ? Math.PI - 0.05 : Math.PI / 2 - 0.03; // frei: auch von unten ansehbar
   baueBoden(m, rand || 0.12);
@@ -585,12 +607,14 @@ function zeichnePanel() {
 
   // --- Darstellung ---
   root.append(abschnitt('Darstellung',
-    auswahl('Umgebung', [{ wert: 'rasen', text: 'Rasen (Garten)' }, { wert: 'frei', text: 'Freies 3D-Modell (ohne Rasen)' }, { wert: 'foto', text: 'Kundengarten (eigenes Foto)' }], zustand.umgebung, (v) => {
+    auswahl('Umgebung', [{ wert: 'rasen', text: 'Rasen (Garten)' }, { wert: 'frei', text: 'Freies 3D-Modell (ohne Rasen)' }, { wert: 'garten3d', text: 'Kundengarten 3D (Fotos, zum Umschauen)' }, { wert: 'foto', text: 'Fotomontage (ein Foto, feste Ansicht)' }], zustand.umgebung, (v) => {
       const vorher = zustand.umgebung; zustand.umgebung = v; if (v !== 'frei') zustand.schnitt = 'aus';
       neuBauen(vorher === 'foto' && v !== 'foto'); groesseAnpassen();
       if (v === 'foto' && !fotoBild()) $('foto-datei').click(); // gleich nach dem Foto fragen
+      if (v === 'garten3d' && !gartenBilder().length) $('garten-dateien').click();
     }),
     zustand.umgebung === 'foto' ? fotoBedienung() : '',
+    zustand.umgebung === 'garten3d' ? gartenBedienung() : '',
     zustand.umgebung === 'foto' ? '' : pool.aufbau
       ? [auswahl('Schnitt durch das Becken', [{ wert: 'aus', text: 'Aus' }, { wert: 'quer', text: 'Querschnitt' }, { wert: 'laengs', text: 'Längsschnitt' }], zustand.schnitt,
           (v) => { zustand.schnitt = v; if (v !== 'aus') zustand.umgebung = 'frei'; neuBauen(); kameraAufSchnitt(); }),
@@ -601,6 +625,57 @@ function zeichnePanel() {
     hinweis(zustand.umgebung === 'foto' ? 'Bedienung: Pool mit der Maus oder dem Finger auf dem Foto verschieben. Mausrad = Pool drehen.' : 'Bedienung: Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.')));
   panel.scrollTop = scroll;
 }
+
+/** Bedienelemente für den Kundengarten 3D: Fotos verwalten, Projektion, Boden, Licht. */
+function gartenBedienung() {
+  const p = zustand.garten, bilder = gartenBilder();
+  const r = (label, key, min, max, schritt) => regler(label, p[key], min, max, schritt, (v, fertig) => { p[key] = v; neuBauen(false, fertig); });
+  const hinzu = el('button', { type: 'button', className: 'knopf', textContent: bilder.length ? 'Weitere Fotos hinzufügen …' : 'Gartenfotos laden (1–4 oder 360°-Panorama) …', disabled: bilder.length >= 4 });
+  hinzu.addEventListener('click', () => $('garten-dateien').click());
+  const liste = bilder.map((b, i) => {
+    const sel = el('select', {}); RICHTUNGEN.forEach((x) => sel.add(new Option(x.text, x.wert)));
+    sel.value = b.richtung; sel.disabled = b.panorama;
+    sel.addEventListener('change', () => { bildRichtung(i, +sel.value); neuBauen(); });
+    const weg = el('button', { type: 'button', className: 'knopf hell klein', textContent: 'Entfernen' });
+    weg.addEventListener('click', () => { bildEntfernen(i); neuBauen(); });
+    const vorschau = el('img', { src: b.img.src, alt: b.name, className: 'vorschau' });
+    return el('div', { className: 'bildzeile' }, vorschau, el('div', {}, el('span', { textContent: b.panorama ? '360°-Panorama' : 'Blickrichtung:' }), b.panorama ? '' : sel), weg);
+  });
+  const zurueck = el('button', { type: 'button', className: 'knopf hell', textContent: 'Einstellungen zurücksetzen' });
+  zurueck.addEventListener('click', () => { zustand.garten = { ...GARTEN_STANDARD }; neuBauen(); });
+  return [
+    el('div', { className: 'knoepfe' }, hinzu), ...liste,
+    hinweis(bilder.length
+      ? 'Die Fotos bleiben nur auf diesem Rechner. Sie werden nicht hochgeladen und nicht mit der Konfiguration gespeichert.'
+      : 'So fotografieren: am späteren Pool-Standort stehen, Handy auf Augenhöhe und gerade halten, dann ein 360°-Panorama oder je ein Querformat-Foto nach vorn, rechts, hinten und links.'),
+    bilder.length ? [
+      el('h3', { textContent: 'Fotos einpassen' }),
+      bilder.some((b) => b.panorama) ? '' : r('Bildwinkel der Fotos (°)', 'bildwinkel', 35, 120, 1),
+      r('Horizont im Foto (oben → unten)', 'horizont', 0.2, 0.8, 0.01),
+      r('Drehung der Umgebung (°)', 'drehung', -180, 180, 1),
+      r('Aufnahmehöhe (m)', 'hoehe', 0.8, 4, 0.05),
+      r('Entfernung der Umgebung (m)', 'radius', 12, 80, 1),
+      el('h3', { textContent: 'Boden um den Pool' }),
+      auswahl('Belag', [{ wert: 'rasen', text: 'Rasen' }, { wert: 'pflaster', text: 'Pflaster' }, { wert: 'kies', text: 'Kies' }, { wert: 'foto', text: 'Nur Foto (kein eigener Belag)' }], p.boden, (v) => { p.boden = v; neuBauen(); }),
+      p.boden !== 'foto' ? r('Größe der Fläche (m)', 'bodenRadius', 4, 25, 0.5) : '',
+      el('h3', { textContent: 'Licht passend zu den Fotos' }),
+      r('Sonnenrichtung (°)', 'sonneRichtung', 0, 360, 1),
+      r('Sonnenhöhe (°)', 'sonneHoehe', 5, 85, 1),
+      r('Helligkeit', 'helligkeit', 0.4, 1.6, 0.02),
+      el('div', { className: 'knoepfe' }, zurueck),
+    ] : '',
+  ];
+}
+$('garten-dateien').addEventListener('change', async (e) => {
+  const dateien = [...e.target.files]; e.target.value = '';
+  if (!dateien.length) return;
+  try {
+    const n = await bilderHinzu(dateien);
+    zustand.umgebung = 'garten3d';
+    neuBauen(true); groesseAnpassen();
+    zeigeMeldung(n ? `${n} Foto(s) geladen. Mit der Maus umschauen; unter „Darstellung“ Blickrichtung, Horizont und Drehung anpassen.` : 'Es können höchstens 4 Fotos geladen werden.');
+  } catch (err) { zeigeMeldung(err.message); }
+});
 
 /** Bedienelemente des Foto-Modus: Foto laden, Kamera an das Foto anpassen, Pool drehen, Sonne und Helligkeit. */
 function fotoBedienung() {
