@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>poolmaris Pool-Konfigurator</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Three.js liegt lokal in app/lib (kein CDN, keine Verbindung nach außen) -->
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.js" } }
+  </script>
+</head>
+<body>
+  <aside id="panel">
+    <h1>poolmaris<span>Pool-Konfigurator</span></h1>
+
+    <div id="meldung" class="meldung" hidden></div>
+    <div id="optionen"></div>
+  </aside>
+
+  <main>
+    <canvas id="ansicht"></canvas>
+    <div id="fehler" hidden></div>
+  </main>
+
+  <!-- Druckansicht der Zusammenfassung (nur beim Drucken sichtbar) -->
+  <div id="druck"></div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

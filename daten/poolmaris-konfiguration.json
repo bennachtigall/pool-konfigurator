@@ -1,0 +1,1593 @@
+{
+  "_info": {
+    "titel": "poolmaris 3D-Pool-Konfigurator – Produktdaten",
+    "stand": "2026-11-15",
+    "quelle": "poolmaris-Datenblätter und Herstellerbroschüren (Walter, Carobbio, ScandiRoc, Trend Pool)",
+    "einheiten": "Alle Maße in Metern, sofern nicht anders angegeben (_mm = Millimeter, _cm = Zentimeter)",
+    "hinweis": "Bewusst ohne Preise. Der Konfigurator zeigt keine Preise an. Einträge mit offen: true müssen noch geklärt werden (siehe offene_punkte am Ende)."
+  },
+  "pools": [
+    {
+      "id": "rundpool",
+      "name": "Rundpool (Stahlmantelbecken)",
+      "form": "rund",
+      "bauweise": "Stahlmantel, feuerverzinkt & kunststoffbeschichtet, mit Style-Handlauf",
+      "folie_mm": 0.8,
+      "folienfarben": [
+        "blau",
+        "sand",
+        "grau"
+      ],
+      "groessen": [
+        {
+          "durchmesser": 3.5,
+          "tiefe": 1.2
+        },
+        {
+          "durchmesser": 4.5,
+          "tiefe": 1.2
+        },
+        {
+          "durchmesser": 5.0,
+          "tiefe": 1.2
+        },
+        {
+          "durchmesser": 3.5,
+          "tiefe": 1.35
+        },
+        {
+          "durchmesser": 4.5,
+          "tiefe": 1.35
+        },
+        {
+          "durchmesser": 5.0,
+          "tiefe": 1.35
+        },
+        {
+          "durchmesser": 6.0,
+          "tiefe": 1.35
+        },
+        {
+          "durchmesser": 4.5,
+          "tiefe": 1.5
+        },
+        {
+          "durchmesser": 5.0,
+          "tiefe": 1.5
+        },
+        {
+          "durchmesser": 6.0,
+          "tiefe": 1.5
+        }
+      ],
+      "folienfarben_hinweis": "Im Rundpool-Datenblatt heißt 'grau' 'Hellgrau (Eleganz Polarmeer)'",
+      "einstieg": {
+        "standard": "edelstahlleiter_v2a",
+        "alternativen": [],
+        "hinweis": "Leiter laut Datenblatt 'für Tiefbecken'"
+      },
+      "im_set_enthalten": [
+        "Folie in Beckenform",
+        "Style-Handlauf",
+        "Einbauskimmer & Einlaufdüse (vormontiert)",
+        "Solarfolie in Beckenform",
+        "Isolierter Untergrund mit Vinylplatten",
+        "Edelstahlleiter V2A",
+        "Boden- und Wandvlies",
+        "Trägersystem und Bodenplatte (Perimeter-Hartschaumplatten Nut+Feder, Vinylplatten)",
+        "Vierkantrohre 60 × 30 mm für das Splittbett"
+      ],
+      "optionen": [
+        {
+          "id": "conzero_rundschalung",
+          "name": "ConZero-Rundschalung (Poolbau ohne Beton)",
+          "beschreibung": "Passgenaue Hartschaum-Dämmschalen für Außenwand und Boden, badefertig in 1–3 Tagen, rückbaubar",
+          "verfuegbar_fuer": "alle Größen",
+          "hinweis": "Aufpreis-Option. Das Trägersystem (Hartschaumplatten, Vinylplatten) ist im Set bereits enthalten, die Rundschalung (Dämmung der Außenwand) kommt optional dazu."
+        }
+      ]
+    },
+    {
+      "id": "ovalpool",
+      "name": "Ovalpool mit Betonfundament",
+      "form": "oval",
+      "bauweise": "Stahlmantel lackiert (feuerverzinkt, innen schutzlackiert, außen kunststoffbeschichtet), betonierte Bodenplatte & Betonmauern",
+      "folie_mm": 0.8,
+      "folienfarben": [
+        "blau",
+        "sand",
+        "grau"
+      ],
+      "groessen": [
+        {
+          "breite": 3.2,
+          "laenge": 5.25,
+          "tiefe": 1.2,
+          "inhalt_m3": 17
+        },
+        {
+          "breite": 3.2,
+          "laenge": 6.0,
+          "tiefe": 1.2,
+          "inhalt_m3": 19
+        },
+        {
+          "breite": 3.5,
+          "laenge": 7.0,
+          "tiefe": 1.2,
+          "inhalt_m3": 24
+        },
+        {
+          "breite": 3.2,
+          "laenge": 5.25,
+          "tiefe": 1.35,
+          "inhalt_m3": 19
+        },
+        {
+          "breite": 3.2,
+          "laenge": 6.0,
+          "tiefe": 1.35,
+          "inhalt_m3": 21
+        },
+        {
+          "breite": 3.5,
+          "laenge": 7.0,
+          "tiefe": 1.35,
+          "inhalt_m3": 27
+        },
+        {
+          "breite": 4.16,
+          "laenge": 8.0,
+          "tiefe": 1.35,
+          "inhalt_m3": 37
+        },
+        {
+          "breite": 3.2,
+          "laenge": 6.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 24
+        },
+        {
+          "breite": 3.5,
+          "laenge": 7.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 31
+        },
+        {
+          "breite": 4.16,
+          "laenge": 8.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 41
+        }
+      ],
+      "geometrie_hinweis": "Gerade Seitenwände, halbrunde Enden (Radius = Breite / 2)",
+      "einstieg": {
+        "standard": "tiefbeckenleiter_v2a",
+        "alternativen": []
+      },
+      "im_set_enthalten": [
+        "Stahlmantel lackiert",
+        "Poolfolie 0,8 mm",
+        "Bodenschutzvlies",
+        "Farblich passender Handlauf",
+        "Tiefbeckenleiter V2A Weitholm",
+        "Einlaufdüsen & Skimmer",
+        "Solarplane & Winterabdeckung"
+      ],
+      "optionen": []
+    },
+    {
+      "id": "pp_pool",
+      "name": "Kunststoff-Pool (PP-Platten)",
+      "form": "rechteck",
+      "bauweise": "Verschweißte Polypropylen-Platten, fugenlos; Wände 8 mm, Boden 6 mm; Wandisolation 20 mm",
+      "plattenfarben": [
+        "blau",
+        "weiss",
+        "grau"
+      ],
+      "oberflaechen": [
+        "glatt",
+        "genarbt"
+      ],
+      "groessen": [
+        {
+          "laenge": 4.5,
+          "breite": 3.1,
+          "tiefe": 1.4,
+          "inhalt_m3": 20
+        },
+        {
+          "laenge": 6.1,
+          "breite": 3.1,
+          "tiefe": 1.5,
+          "inhalt_m3": 28
+        },
+        {
+          "laenge": 7.2,
+          "breite": 3.5,
+          "tiefe": 1.5,
+          "inhalt_m3": 37
+        },
+        {
+          "laenge": 8.0,
+          "breite": 3.5,
+          "tiefe": 1.5,
+          "inhalt_m3": 42
+        }
+      ],
+      "masse_hinweis": "Innenmaße als Richtwerte",
+      "einstieg": {
+        "standard": "seitliche_treppe",
+        "alternativen": [
+          "ecktreppe_rund",
+          "ecktreppe_diagonal",
+          "seitliche_treppe_mit_sitzbank",
+          "ecktreppe_diagonal_mit_sitzbank",
+          "ecktreppe_rund_mit_sitzbank",
+          "durchgehende_treppe"
+        ],
+        "treppenfarbe": "wie Plattenfarbe (blau, weiß oder grau)"
+      },
+      "im_set_enthalten": [
+        "Massive PP-Platten",
+        "Armierungseisen in der Beckenversteifung",
+        "Wandisolation 20 mm",
+        "Skimmer & Einlaufdüsen (vorinstalliert)",
+        "Holzverstärkung für den Transport"
+      ],
+      "optionen": [
+        "led_weiss",
+        "led_rgb"
+      ]
+    },
+    {
+      "id": "systemsteinpool",
+      "name": "Systemsteinpool (Styroporsteine P40)",
+      "form": "rechteck",
+      "bauweise": "Styroporsteine Härte P40, Format 125 × 25 × 50 cm, Nut & Feder",
+      "folie_mm": 0.8,
+      "folienfarben": [
+        "blau",
+        "sand",
+        "grau"
+      ],
+      "einbauteile_farben": [
+        "weiss",
+        "sand",
+        "grau"
+      ],
+      "groessen": [
+        {
+          "laenge": 5.0,
+          "breite": 3.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 22
+        },
+        {
+          "laenge": 6.0,
+          "breite": 3.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 27
+        },
+        {
+          "laenge": 7.0,
+          "breite": 3.5,
+          "tiefe": 1.5,
+          "inhalt_m3": 36
+        },
+        {
+          "laenge": 8.0,
+          "breite": 4.0,
+          "tiefe": 1.5,
+          "inhalt_m3": 44
+        }
+      ],
+      "einstieg": {
+        "standard": "edelstahlleiter_v2a",
+        "alternativen": [
+          "diagonaltreppe",
+          "gerade_ecktreppe",
+          "stufen_volle_breite",
+          "ecktreppe_mit_sitzstufe"
+        ]
+      },
+      "im_set_enthalten": [
+        "Styroporsteine P40",
+        "Folie 0,8 mm",
+        "Schutzvlies (zugeschnitten)",
+        "Skimmer & 4 Einlaufdüsen",
+        "Klemmprofilleiste",
+        "Edelstahl-Einstiegsleiter V2A"
+      ],
+      "optionen": [
+        "led_unterwasser"
+      ]
+    },
+    {
+      "id": "kompaktpool",
+      "name": "Systemstein-Kompaktpool (Styroporsteine P30)",
+      "form": "rechteck",
+      "bauweise": "Styroporsteine Härte P30, Format 100 × 25 × 25 cm, Nut & Feder",
+      "folie_mm": 0.8,
+      "folienfarben": [
+        "blau",
+        "sand",
+        "grau"
+      ],
+      "einbauteile_farben": [
+        "weiss",
+        "sand",
+        "grau"
+      ],
+      "groessen": [
+        {
+          "name": "Kompakt",
+          "laenge": 4.0,
+          "breite": 2.0,
+          "tiefe": 1.25
+        },
+        {
+          "name": "Mittel",
+          "laenge": 4.0,
+          "breite": 2.5,
+          "tiefe": 1.25
+        },
+        {
+          "name": "Komfort",
+          "laenge": 5.0,
+          "breite": 2.5,
+          "tiefe": 1.25
+        }
+      ],
+      "einstieg": {
+        "standard": "edelstahlleiter",
+        "alternativen": [
+          "stufenanlage"
+        ],
+        "hinweis": "Stufenanlage statt Leiter, für alle Größen, rutschhemmend, in Folienfarbe, auch als Sitzstufe nutzbar"
+      },
+      "im_set_enthalten": [
+        "Styroporsteine P30",
+        "Folie 0,8 mm",
+        "Schutzvlies",
+        "Skimmer & 4 Einlaufdüsen",
+        "Klemmprofilleiste",
+        "Edelstahl-Einstiegsleiter"
+      ],
+      "optionen": [],
+      "skimmer_duesen_farben": [
+        "weiss",
+        "sand",
+        "grau"
+      ]
+    }
+  ],
+  "farben_3d": {
+    "_hinweis": "Darstellungsfarben für das 3D-Modell (Richtwerte, nicht aus den Datenblättern). Bitte mit echten Folienmustern abgleichen.",
+    "folie": {
+      "blau": {
+        "name": "Blau",
+        "hex": "#4A90C8"
+      },
+      "sand": {
+        "name": "Sand",
+        "hex": "#E3D3B0"
+      },
+      "grau": {
+        "name": "Grau",
+        "hex": "#9AA3A8"
+      }
+    },
+    "pp_platten": {
+      "blau": {
+        "name": "Blau",
+        "hex": "#5B9BD5"
+      },
+      "weiss": {
+        "name": "Weiß",
+        "hex": "#F2F2EE"
+      },
+      "grau": {
+        "name": "Grau",
+        "hex": "#8E979C"
+      }
+    },
+    "einbauteile": {
+      "weiss": {
+        "name": "Weiß",
+        "hex": "#F4F4F2"
+      },
+      "sand": {
+        "name": "Sand",
+        "hex": "#DCCBA6"
+      },
+      "grau": {
+        "name": "Grau",
+        "hex": "#A0A4A6"
+      }
+    },
+    "umrandung": {
+      "_hinweis": "Richtwerte für die Darstellung, mit echten Mustern abgleichen",
+      "crystal_bianco": "#E8DFC9",
+      "earthstone_grey": "#B9BBBA",
+      "earthstone_nero": "#4A4A4C",
+      "mountain_grey": "#8A8D8F",
+      "mountain_black": "#3A3B3D",
+      "soft_sand": "#D9C9A6",
+      "baltic_light_grey": "#B4B7B8",
+      "weiss": "#F1EFE9",
+      "gelb_sand": "#E0CF9E",
+      "grau": "#A7A9AA",
+      "rosa": "#E4C3BA",
+      "terracotta": "#C77B58"
+    },
+    "profil": {
+      "anthrazit": "#3B3F43",
+      "silber": "#C5C9CC",
+      "weiss": "#F2F2F0",
+      "grau": "#8E9396"
+    },
+    "lamellen": {
+      "hellgrau": "#C9CDD0",
+      "mittelgrau": "#8E9396",
+      "weiss": "#F2F2F0",
+      "beige": "#E5D9BE",
+      "solar": "#2C3E50",
+      "solar_alu_look": "#6B7B88"
+    },
+    "verkleidung_bank": {
+      "weiss": "#F2F2F0",
+      "sand": "#E3D8B8",
+      "hellgrau": "#C9CDD0",
+      "holzoptik": "#A98A63"
+    },
+    "terrasse": {
+      "holz": {
+        "name": "Holz",
+        "hex": "#9C7A55"
+      },
+      "feinsteinzeug": {
+        "name": "Feinsteinzeug",
+        "hex": "#9A9C9E"
+      }
+    },
+    "led": {
+      "weiss": "#FFFFFF",
+      "rgb": "#59D3FF"
+    }
+  },
+  "treppen": {
+    "seitliche_treppe": {
+      "name": "Seitliche Treppe",
+      "beschreibung": "Treppenbreiter Einstieg an der Beckenseite"
+    },
+    "ecktreppe_rund": {
+      "name": "Ecktreppe rund",
+      "beschreibung": "Viertelkreisförmige Stufen in einer Ecke"
+    },
+    "ecktreppe_diagonal": {
+      "name": "Ecktreppe diagonal",
+      "beschreibung": "Dreieckige Stufen diagonal in einer Ecke"
+    },
+    "seitliche_treppe_mit_sitzbank": {
+      "name": "Seitliche Treppe mit Sitzbank",
+      "beschreibung": "Seitliche Treppe, daneben durchgehende Sitzbank an der Schmalseite"
+    },
+    "ecktreppe_diagonal_mit_sitzbank": {
+      "name": "Ecktreppe diagonal mit Sitzbank",
+      "beschreibung": "Diagonale Ecktreppe mit anschließender Sitzbank"
+    },
+    "ecktreppe_rund_mit_sitzbank": {
+      "name": "Ecktreppe rund mit Sitzbank",
+      "beschreibung": "Runde Ecktreppe mit anschließender Sitzbank"
+    },
+    "durchgehende_treppe": {
+      "name": "Durchgehende Treppe",
+      "beschreibung": "Stufen über die gesamte Beckenbreite"
+    },
+    "diagonaltreppe": {
+      "name": "Diagonaltreppe",
+      "beschreibung": "Diagonale Treppe in einer Ecke"
+    },
+    "gerade_ecktreppe": {
+      "name": "Gerade Ecktreppe",
+      "beschreibung": "Gerade Stufen in einer Ecke"
+    },
+    "stufen_volle_breite": {
+      "name": "Stufen über volle Breite",
+      "beschreibung": "Stufen über die gesamte Beckenbreite"
+    },
+    "ecktreppe_mit_sitzstufe": {
+      "name": "Ecktreppe mit Sitzstufe",
+      "beschreibung": "Ecktreppe mit breiter Sitzstufe"
+    },
+    "stufenanlage": {
+      "name": "Eingebaute Stufenanlage",
+      "beschreibung": "Rutschhemmende Einstiegsstufen, auch als Sitzstufe nutzbar"
+    },
+    "edelstahlleiter_v2a": {
+      "name": "Edelstahl-Einstiegsleiter V2A",
+      "beschreibung": "Einhängeleiter"
+    },
+    "tiefbeckenleiter_v2a": {
+      "name": "Tiefbeckenleiter V2A Weitholm",
+      "beschreibung": "Einhängeleiter für Tiefbecken"
+    },
+    "edelstahlleiter": {
+      "name": "Edelstahl-Einstiegsleiter",
+      "beschreibung": "Einhängeleiter"
+    },
+    "_richtwerte": {
+      "_hinweis": "Richtwerte für das 3D-Modell, nicht aus den Datenblättern. Vom Auftraggeber am 2026-11-15 bestätigt.",
+      "stufenhoehe_m": 0.25,
+      "stufentiefe_m": 0.3,
+      "stufenanzahl_bei_1_5m_tiefe": 4,
+      "seitliche_treppe_breite_m": 1.5,
+      "ecktreppe_schenkel_m": 1.5,
+      "sitzstufe_sitzbank": {
+        "hoehe_unter_wasserspiegel_m": 0.4,
+        "tiefe_m": 0.45
+      },
+      "stufen_volle_breite": {
+        "breite": "Beckenbreite",
+        "stufen": "3 bis 4"
+      }
+    }
+  },
+  "umrandungen": [
+    {
+      "id": "trendline_keramik",
+      "name": "Trendline Keramikstein (Trend Pool)",
+      "material": "Keramik, Rutschhemmklasse R11",
+      "staerke_cm": 2,
+      "farben": [
+        {
+          "id": "crystal_bianco",
+          "name": "Crystal Bianco",
+          "farbton": "sand"
+        },
+        {
+          "id": "earthstone_grey",
+          "name": "Earthstone Grey",
+          "farbton": "hellgrau"
+        },
+        {
+          "id": "earthstone_nero",
+          "name": "Earthstone Nero",
+          "farbton": "dunkelgrau"
+        }
+      ],
+      "steine": [
+        {
+          "typ": "gerade",
+          "masse_cm": [
+            60,
+            29.7
+          ]
+        },
+        {
+          "typ": "gerade_mit_nase",
+          "masse_cm": [
+            60,
+            29.7
+          ],
+          "nase_cm": 6.5
+        },
+        {
+          "typ": "ecke_radius_135mm",
+          "masse_cm": [
+            60,
+            60
+          ]
+        },
+        {
+          "typ": "ecke_90",
+          "masse_cm": [
+            60,
+            60
+          ]
+        },
+        {
+          "typ": "ecke_90_mit_nase",
+          "masse_cm": [
+            60,
+            60
+          ],
+          "nase_cm": 6.5
+        },
+        {
+          "typ": "verlegeanschlussplatte",
+          "masse_cm": [
+            90,
+            60
+          ],
+          "hinweis": "Zum Erweitern der Fläche um den Pool"
+        }
+      ],
+      "set_varianten": [
+        "ecke_radius_135mm",
+        "ecke_90",
+        "ecke_90_mit_nase"
+      ],
+      "sets_fuer_beckenmasse": [
+        [
+          5.0,
+          3.0
+        ],
+        [
+          6.0,
+          3.0
+        ],
+        [
+          7.0,
+          3.5
+        ],
+        [
+          8.0,
+          4.0
+        ]
+      ],
+      "einzelsteine": true,
+      "bedingungen": {
+        "nicht_fuer_formen": [
+          "rund"
+        ],
+        "grund_form": "Rundpools haben im Konfigurator keine Umrandung."
+      }
+    },
+    {
+      "id": "scandiroc_naturstein",
+      "name": "ScandiRoc Naturstein (Granit)",
+      "material": "Granit",
+      "profil": "flach, Innenseite abgerundet",
+      "masse_mm": {
+        "laenge": 600,
+        "breite": 300,
+        "hoehe": 30
+      },
+      "farben": [
+        {
+          "id": "mountain_grey",
+          "name": "Mountain Grey"
+        },
+        {
+          "id": "mountain_black",
+          "name": "Mountain Black"
+        },
+        {
+          "id": "soft_sand",
+          "name": "Soft Sand"
+        },
+        {
+          "id": "baltic_light_grey",
+          "name": "Baltic Light Grey"
+        }
+      ],
+      "steine": [
+        "normalstein",
+        "radienstein",
+        "eckstein_90"
+      ],
+      "sets_fuer_beckenmasse": [
+        [
+          5.0,
+          3.0
+        ],
+        [
+          6.0,
+          3.0
+        ],
+        [
+          7.0,
+          3.5
+        ],
+        [
+          8.0,
+          4.0
+        ]
+      ],
+      "einzelsteine": true,
+      "hinweis": "Naturstein: leichte Farb- und Maßabweichungen normal",
+      "bedingungen": {
+        "nicht_fuer_formen": [
+          "rund"
+        ],
+        "grund_form": "Rundpools haben im Konfigurator keine Umrandung."
+      }
+    },
+    {
+      "id": "bordo_toro",
+      "name": "Bordo Toro (Carobbio), sandgestrahlt",
+      "material": "Zement-Marmor-Mischung, frostsicher",
+      "profil": "flach, Innenseite abgerundet",
+      "masse_mm": {
+        "laenge": 500,
+        "breite": 300,
+        "hoehe": 45
+      },
+      "farben": [
+        "weiss",
+        "gelb_sand",
+        "grau",
+        "rosa",
+        "terracotta"
+      ],
+      "steine": [
+        {
+          "typ": "normalstein",
+          "masse_cm": [
+            50,
+            30
+          ]
+        },
+        {
+          "typ": "aussenecke_90",
+          "masse_cm": [
+            40,
+            40
+          ]
+        },
+        {
+          "typ": "radienstein",
+          "masse_cm": "nach Angabe"
+        },
+        {
+          "typ": "innenecke_270",
+          "masse_cm": [
+            38,
+            38
+          ]
+        }
+      ],
+      "sets_fuer_beckenmasse": [
+        [
+          5.0,
+          3.0
+        ],
+        [
+          6.0,
+          3.0
+        ],
+        [
+          7.0,
+          3.5
+        ],
+        [
+          8.0,
+          4.0
+        ]
+      ],
+      "treppenanlagen": [
+        {
+          "innenbreite": 2.0,
+          "radius": 1.0
+        },
+        {
+          "innenbreite": 2.5,
+          "radius": 1.25
+        },
+        {
+          "innenbreite": 3.0,
+          "radius": 1.5
+        }
+      ],
+      "einzelsteine": true,
+      "einzelsteine_farbe": "Weiß, andere Farben auf Anfrage",
+      "bedingungen": {
+        "nicht_fuer_formen": [
+          "rund"
+        ],
+        "grund_form": "Rundpools haben im Konfigurator keine Umrandung."
+      }
+    },
+    {
+      "id": "bordo_standard",
+      "name": "Bordo Standard (Carobbio), sandgestrahlt",
+      "material": "Zement-Marmor-Mischung, frostsicher",
+      "profil": "mit Schwallkante",
+      "masse_mm": {
+        "laenge": 600,
+        "breite": 335,
+        "hoehe_hinten": 30,
+        "hoehe_schwallkante": 65,
+        "ueberstand_kante": 20
+      },
+      "farben": [
+        "weiss",
+        "gelb_sand",
+        "grau",
+        "rosa",
+        "terracotta"
+      ],
+      "steine": [
+        {
+          "typ": "normalstein",
+          "masse_cm": [
+            60,
+            33.5
+          ]
+        },
+        {
+          "typ": "aussenecke_90",
+          "masse_cm": [
+            39,
+            39
+          ]
+        },
+        {
+          "typ": "radienstein",
+          "masse_cm": "nach Angabe"
+        },
+        {
+          "typ": "innenecke_270",
+          "masse_cm": [
+            37,
+            37
+          ]
+        }
+      ],
+      "sets_fuer_beckenmasse": [
+        [
+          5.0,
+          3.0
+        ],
+        [
+          6.0,
+          3.0
+        ],
+        [
+          7.0,
+          3.5
+        ],
+        [
+          8.0,
+          4.0
+        ]
+      ],
+      "treppenanlagen": [
+        {
+          "innenbreite": 2.0,
+          "radius": 1.0
+        },
+        {
+          "innenbreite": 2.5,
+          "radius": 1.25
+        },
+        {
+          "innenbreite": 3.0,
+          "radius": 1.5
+        }
+      ],
+      "einzelsteine": true,
+      "einzelsteine_farbe": "Weiß, andere Farben auf Anfrage",
+      "bedingungen": {
+        "nicht_fuer_formen": [
+          "rund"
+        ],
+        "grund_form": "Rundpools haben im Konfigurator keine Umrandung."
+      }
+    },
+    {
+      "id": "bordo_expo",
+      "name": "Bordo Expo (Carobbio)",
+      "material": "Zement-Marmor-Mischung (80 % Marmor), grobporig, frostsicher",
+      "profil": "mit Schwallkante",
+      "masse_mm": {
+        "laenge": 600,
+        "breite": 335,
+        "hoehe_hinten": 30,
+        "hoehe_schwallkante": 65,
+        "ueberstand_kante": 20
+      },
+      "farben": [
+        "weiss"
+      ],
+      "steine": [
+        {
+          "typ": "normalstein",
+          "masse_cm": [
+            60,
+            31
+          ]
+        },
+        {
+          "typ": "aussenecke_90",
+          "masse_cm": [
+            39,
+            39
+          ]
+        },
+        {
+          "typ": "radienstein",
+          "masse_cm": "nach Angabe"
+        },
+        {
+          "typ": "innenecke_270",
+          "masse_cm": [
+            37,
+            37
+          ]
+        }
+      ],
+      "sets_fuer_beckenmasse": [
+        [
+          5.0,
+          3.0
+        ],
+        [
+          6.0,
+          3.0
+        ],
+        [
+          7.0,
+          3.5
+        ],
+        [
+          8.0,
+          4.0
+        ]
+      ],
+      "treppenanlagen": [
+        {
+          "innenbreite": 2.0,
+          "radius": 1.0
+        },
+        {
+          "innenbreite": 2.5,
+          "radius": 1.25
+        },
+        {
+          "innenbreite": 3.0,
+          "radius": 1.5
+        }
+      ],
+      "einzelsteine": true,
+      "bedingungen": {
+        "nicht_fuer_formen": [
+          "rund"
+        ],
+        "grund_form": "Rundpools haben im Konfigurator keine Umrandung."
+      }
+    }
+  ],
+  "ueberdachungen": [
+    {
+      "id": "azure_flat_compact_box",
+      "name": "Azure Flat Compact – Boxsystem",
+      "typ": "teleskopisch, Schienen beidseitig",
+      "profilfarbe": "anthrazit",
+      "scheiben": "3 mm Polycarbonat, klar",
+      "groessen": [
+        {
+          "innen_breite": 3.25,
+          "innen_laenge": 6.42,
+          "aussen_breite": 3.68,
+          "aussen_laenge": 6.5,
+          "hoehe": 0.75
+        },
+        {
+          "innen_breite": 3.75,
+          "innen_laenge": 7.62,
+          "aussen_breite": 4.18,
+          "aussen_laenge": 7.7,
+          "hoehe": 0.8
+        },
+        {
+          "innen_breite": 4.5,
+          "innen_laenge": 8.55,
+          "aussen_breite": 5.07,
+          "aussen_laenge": 8.63,
+          "hoehe": 0.9
+        }
+      ],
+      "merkmale": [
+        "Beide Stirnseiten abnehmbar",
+        "Abschließbar",
+        "Belastbarkeit 80 kg/m²",
+        "3 m Laufschienenverlängerung"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools."
+      }
+    },
+    {
+      "id": "azure_flat_compact_individuell",
+      "name": "Azure Flat Compact – individuell",
+      "typ": "teleskopisch, Schienen beidseitig",
+      "scheiben": "3 mm Polycarbonat",
+      "groessen": "individuell in Breite und Länge",
+      "merkmale": [
+        "Seitliche verschiebbare Einstiegstür",
+        "Schließsystem mit zwei Schlüsseln",
+        "Montage vor Ort optional"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools."
+      }
+    },
+    {
+      "id": "azure_flat_compact_vormontiert",
+      "name": "Azure Flat Compact – vormontiert",
+      "typ": "teleskopisch, Schienen beidseitig",
+      "scheiben": "3 mm Polycarbonat",
+      "groessen": "7 Modellgrößen",
+      "offen": true,
+      "merkmale": [
+        "Seitliche verschiebbare Einstiegstür",
+        "Schließsystem mit zwei Schlüsseln",
+        "Zusammengebaut geliefert",
+        "Beide Stirnseiten abnehmbar",
+        "Belastbarkeit 80 kg/m²",
+        "Laufschienenverlängerung anpassbar",
+        "Montage vor Ort optional"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools.",
+        "grund_offen": "Die Größen dieser Überdachung fehlen noch (Herstellerangabe fehlt)."
+      }
+    },
+    {
+      "id": "parade_high",
+      "name": "Parade High",
+      "typ": "teleskopisch, Schiene nur auf einer Seite",
+      "profilfarbe": "anthrazit",
+      "scheiben": "4 mm Polycarbonat, klar",
+      "elemente": 4,
+      "schienenseite": [
+        "links",
+        "rechts"
+      ],
+      "eingang": "gegenüber der Schiene",
+      "groessen": [
+        {
+          "breite": 3.1,
+          "laenge": 6.4,
+          "hoehe": 0.72,
+          "schiene_laenge": 8.72
+        },
+        {
+          "breite": 3.75,
+          "laenge": 7.6,
+          "hoehe": 0.77,
+          "schiene_laenge": 10.3
+        },
+        {
+          "breite": 4.25,
+          "laenge": 8.5,
+          "hoehe": 0.93,
+          "schiene_laenge": 10.83
+        }
+      ],
+      "montage_optional": true,
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools."
+      }
+    },
+    {
+      "id": "parade_low",
+      "name": "Parade Low",
+      "typ": "teleskopisch, Schiene nur auf einer Seite, besonders flach",
+      "profilfarben": [
+        "silber",
+        "anthrazit"
+      ],
+      "scheiben": "4 mm Polycarbonat, klar",
+      "elemente": 4,
+      "schienenseite": [
+        "links",
+        "rechts"
+      ],
+      "groessen": [
+        {
+          "breite": 3.25,
+          "laenge": 6.4,
+          "hoehe": 0.46,
+          "schiene_laenge": 9.18
+        },
+        {
+          "breite": 3.75,
+          "laenge": 7.6,
+          "hoehe": 0.47,
+          "schiene_laenge": 10.4
+        },
+        {
+          "breite": 4.25,
+          "laenge": 8.5,
+          "hoehe": 0.59,
+          "schiene_laenge": 11.3
+        }
+      ],
+      "montage_optional": true,
+      "merkmale": [
+        "Lieferung komplett vormontiert",
+        "Laufschienenverlängerung inklusive",
+        "Abschließbar",
+        "Montage optional"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools."
+      }
+    },
+    {
+      "id": "elegant_neo",
+      "name": "Elegant Neo mit Topausstattung",
+      "typ": "teleskopisch, besonders flach",
+      "max_hoehe": 0.59,
+      "scheiben": "4 mm Polycarbonat (hageltestet)",
+      "elemente": "3–5 je nach Größe",
+      "groessen": "unbekannt",
+      "offen": true,
+      "merkmale": [
+        "Lieferung komplett vormontiert",
+        "Hochklappbares Abschlussprofil zur Belüftung (AirFresh)",
+        "Abschließbar",
+        "Laufschienenverlängerung inklusive",
+        "Laufrollen mit Niosta-Kugellager",
+        "Montage optional"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Überdachungen gibt es im Konfigurator nur für Rechteckpools.",
+        "grund_offen": "Die Größen dieser Überdachung fehlen noch (Herstellerangabe fehlt)."
+      }
+    }
+  ],
+  "abdeckungen": [
+    {
+      "id": "safty_individual",
+      "name": "Poolabdeckung Safty individual",
+      "typ": "Rollabdeckung mit Aluprofilen (Ø 44 mm) und PVC-Gewebe",
+      "farbe": "grau",
+      "bedienung": "Aufrollen mit Handkurbel, Abrollen mit Zuggurt",
+      "groessen": [
+        {
+          "innen": [
+            6.0,
+            3.0
+          ],
+          "aussen": [
+            6.4,
+            3.4
+          ]
+        },
+        {
+          "innen": [
+            7.0,
+            3.5
+          ],
+          "aussen": [
+            7.4,
+            3.9
+          ]
+        },
+        {
+          "innen": [
+            8.0,
+            4.0
+          ],
+          "aussen": [
+            8.4,
+            4.4
+          ]
+        },
+        {
+          "innen": [
+            9.0,
+            4.5
+          ],
+          "aussen": [
+            9.4,
+            4.9
+          ]
+        }
+      ],
+      "optionen": [
+        "windhebeschutz"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Diese Abdeckung gibt es im Konfigurator nur für Rechteckpools.",
+        "grund_groesse": "Die Safty-Abdeckung gibt es erst ab 6 × 3 m Beckenmaß und bis 9 × 4,5 m."
+      }
+    },
+    {
+      "id": "waludeck_origin",
+      "name": "WaluDeck Origin (Walter)",
+      "typ": "Mobile, begehbare Sicherheitsterrasse auf Schienen",
+      "versionen": [
+        "eco",
+        "premium"
+      ],
+      "ausfuehrungen": {
+        "A": "einteilig, Schienen an den Längsseiten",
+        "B": "zweiteilig, Schienen an den Längsseiten",
+        "C": "einteilig, Schienen an den Breitseiten",
+        "D": "zweiteilig, Schienen an den Breitseiten"
+      },
+      "modulbreiten": [
+        1.02,
+        1.36,
+        1.7,
+        2.03,
+        2.37,
+        2.71,
+        3.05
+      ],
+      "modullaenge": {
+        "min": 2.5,
+        "max": 8.5,
+        "schritt": 0.25
+      },
+      "modulhoehe_cm": {
+        "min": 15,
+        "max": 34
+      },
+      "verkleidung": "nicht im Lieferumfang, frei wählbar (z. B. Holz, Feinsteinzeug)",
+      "optionen": [
+        "motorisierung",
+        "motor_verkleidung",
+        "isolierung_60_oder_120mm",
+        "unterkonstruktion_feinsteinzeug",
+        "abschlussleiste_alu"
+      ],
+      "verkleidungen": [
+        "holz",
+        "feinsteinzeug"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Diese Abdeckung gibt es im Konfigurator nur für Rechteckpools.",
+        "max_laenge": 8.5,
+        "grund_groesse": "Die WaluDeck-Module sind höchstens 8,5 m lang.",
+        "ausfuehrungen_max_laenge": {
+          "C": 8.2,
+          "D": 8.2
+        },
+        "grund_ausfuehrung": "Schienen an den Breitseiten gibt es nur bis 8,20 m Beckenlänge."
+      }
+    },
+    {
+      "id": "rolltop_100",
+      "name": "Roll'Top 100 (WaluRoll)",
+      "typ": "Vollautomatische Rollladenabdeckung, Überflur, Einstiegsmodell",
+      "gestellfarben": [
+        "weiss",
+        "grau",
+        "anthrazit"
+      ],
+      "lamellen": {
+        "pvc": [
+          "hellgrau",
+          "mittelgrau",
+          "weiss",
+          "beige"
+        ],
+        "pc": [
+          "solar",
+          "solar_alu_look"
+        ],
+        "hinweis": "Laut Datenblatt Mittelgrau nicht kompatibel; vorläufig auf Wunsch wählbar, bitte klären"
+      },
+      "masse_mm": {
+        "pfosten_hoehe": 470,
+        "pfosten_breite": 210,
+        "pfosten_tiefe": 110,
+        "achshoehe": 385
+      },
+      "breite_gesamt": "Beckenbreite + 370 mm",
+      "breite_zwischen_pfosten": "Innenbreite des Beckens + 150 mm (oder maßgefertigt)",
+      "welle_durchmesser_mm": 181,
+      "lamelle_mm": [
+        60,
+        14
+      ],
+      "treppe": "Winkelausschnitt",
+      "aufrolldurchmesser_mm": {
+        "5": 378,
+        "6": 402,
+        "7": 425,
+        "8": 447,
+        "9": 468,
+        "10": 487,
+        "11": 506,
+        "12": 525,
+        "13": 542
+      },
+      "max_pool": [
+        13.0,
+        5.0
+      ],
+      "optionen": [
+        "funkfernbedienung",
+        "bluetooth_app"
+      ],
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Roll'Top ist für Rund- und Ovalpools nicht geeignet (Eckradius zu groß).",
+        "max_laenge": 13.0,
+        "max_breite": 5.0,
+        "grund_groesse": "Roll'Top passt nur für Becken bis 13 × 5 m."
+      }
+    },
+    {
+      "id": "rolltop_300",
+      "name": "Roll'Top 300 (WaluRoll)",
+      "typ": "Vollautomatische Rollladenabdeckung als Sitzbank",
+      "varianten": [
+        "light",
+        "plus",
+        "light_solar",
+        "plus_solar",
+        "plus_solar_moov"
+      ],
+      "verkleidungsfarben": [
+        "weiss",
+        "sand",
+        "hellgrau",
+        "holzoptik"
+      ],
+      "stuetzenfarben": [
+        "anthrazit",
+        "weiss",
+        "grau"
+      ],
+      "lamellen": {
+        "pvc": [
+          "hellgrau",
+          "mittelgrau",
+          "weiss",
+          "beige"
+        ],
+        "pc": [
+          "solar",
+          "solar_alu_look"
+        ]
+      },
+      "bankgroessen_mm": {
+        "medium": {
+          "hoehe": 587,
+          "tiefe": 624,
+          "bodenabstand": 164,
+          "fuer_poollaenge_bis": 8.0
+        },
+        "large": {
+          "hoehe": 647,
+          "tiefe": 684,
+          "bodenabstand": 173,
+          "fuer_poollaenge_bis": 13.0
+        }
+      },
+      "max_pool": [
+        13.0,
+        5.0
+      ],
+      "optionen": [
+        "funkfernbedienung",
+        "bluetooth_app",
+        "vormontage",
+        "winter_schutzhuelle",
+        "led_beleuchtung"
+      ],
+      "hinweis": "Fernbedienung, App und LED nicht bei Solarmodellen",
+      "welle_durchmesser_mm": 181,
+      "lamelle_mm": [
+        60,
+        14
+      ],
+      "max_eckenradius_mm": 250,
+      "treppe": "Winkelausschnitt",
+      "geliefert_als": "Bausatz (Vormontage der Bank optional)",
+      "gurtfarben": [
+        "weiss",
+        "grau",
+        "sand"
+      ],
+      "holzoptik": "Furniertes Holzoptik",
+      "optionen_lamellen": [
+        "ueberlaufsatz",
+        "haltewinkel_alu",
+        "haltewinkel_edelstahl",
+        "wandbefestigung_edelstahl"
+      ],
+      "bank_trägt_erwachsenen": true,
+      "lamellen_hinweis": "Mittelgrau im Datenblatt grau hinterlegt; vorläufig wählbar, bitte klären",
+      "bedingungen": {
+        "nur_formen": [
+          "rechteck"
+        ],
+        "grund_form": "Roll'Top ist für Rund- und Ovalpools nicht geeignet (Eckradius zu groß).",
+        "max_laenge": 13.0,
+        "max_breite": 5.0,
+        "grund_groesse": "Roll'Top passt nur für Becken bis 13 × 5 m."
+      },
+      "solar_varianten": [
+        "light_solar",
+        "plus_solar",
+        "plus_solar_moov"
+      ],
+      "nicht_bei_solar": [
+        "funkfernbedienung",
+        "bluetooth_app",
+        "led_beleuchtung"
+      ],
+      "grund_solar": "Bei Solarmodellen nicht verfügbar."
+    }
+  ],
+  "regeln": [
+    {
+      "regel": "Umrandungs-Komplettsets gibt es nur für Rechteckbecken 5×3, 6×3, 7×3,5 und 8×4 m. Andere Maße werden aus Einzelsteinen berechnet."
+    },
+    {
+      "regel": "Ovalpools: Umrandung nur aus Einzel- und Radiensteinen (Radiensteine nach Angabe)."
+    },
+    {
+      "regel": "Roll'Top 100: nicht für Becken mit Eckradius ab 300 mm, also nicht für Rund- und Ovalpools."
+    },
+    {
+      "regel": "Roll'Top 300: nicht für Becken mit Eckradius über 250 mm, also nicht für Rund- und Ovalpools."
+    },
+    {
+      "regel": "Roll'Top 100 und 300: Beckengröße max. 5 × 13 m."
+    },
+    {
+      "regel": "WaluDeck: nur für eingelassene Pools. Schienen an den Breitseiten nur bis 8,20 m Beckenlänge."
+    },
+    {
+      "regel": "Safty individual: kleinste Größe 6 × 3 m innen."
+    },
+    {
+      "regel": "LED-Scheinwerfer laut Datenblatt nur bei PP-Pool und Systemsteinpool (P40)."
+    },
+    {
+      "regel": "Überdachung: Der Konfigurator schlägt die kleinste Überdachung vor, in die der Pool samt Randsteinen passt (Maße der Überdachung müssen größer sein als Pool plus Umrandung). Nur für Rechteckpools; für Rund- und Ovalpools gibt es keine passende Überdachungsgröße.",
+      "status": "bestätigt 2026-11-15"
+    },
+    {
+      "regel": "Rundpools haben keine Umrandung im Konfigurator.",
+      "status": "bestätigt 2026-11-15"
+    },
+    {
+      "regel": "Premium Skimmer laut Datenblatt für Folien- und Betonbecken (alle Pools mit Folie), LED nur bei PP-Pool und Systemsteinpool.",
+      "status": "bestätigt 2026-11-15"
+    }
+  ],
+  "offene_punkte": [
+    "Elegant Neo: Größen fehlen.",
+    "Azure Flat Compact vormontiert: Die 7 Modellgrößen fehlen.",
+    "Rundpool: Ist 'Hellgrau' dieselbe Folie wie 'Grau' bei den anderen Pools?",
+    "Roll'Top 100 und 300: Ist die PVC-Lamelle Mittelgrau wählbar? Beim 100 steht im Datenblatt 'nicht kompatibel', beim 300 ist sie grau hinterlegt. Vorläufig bei beiden wählbar."
+  ],
+  "zubehoer": {
+    "led_weiss": {
+      "name": "LED-Scheinwerfer Weiß",
+      "anzahl_waehlbar": true,
+      "fuer": [
+        "pp_pool"
+      ],
+      "grund_nicht": "LED gibt es laut Datenblatt nur beim PP-Pool und beim Systemsteinpool."
+    },
+    "led_rgb": {
+      "name": "LED-Scheinwerfer RGB",
+      "anzahl_waehlbar": true,
+      "fuer": [
+        "pp_pool"
+      ],
+      "grund_nicht": "LED gibt es laut Datenblatt nur beim PP-Pool und beim Systemsteinpool."
+    },
+    "led_unterwasser": {
+      "name": "LED-Unterwasserscheinwerfer",
+      "varianten": [
+        "weiss",
+        "rgb"
+      ],
+      "anzahl_waehlbar": true,
+      "fuer": [
+        "systemsteinpool"
+      ],
+      "grund_nicht": "LED gibt es laut Datenblatt nur beim PP-Pool und beim Systemsteinpool."
+    },
+    "premium_skimmer": {
+      "name": "poolmaris Premium Skimmer",
+      "fuer": [
+        "rundpool",
+        "ovalpool",
+        "systemsteinpool",
+        "kompaktpool"
+      ],
+      "einschub_deckel_farben": [
+        "weiss",
+        "sand",
+        "hellgrau",
+        "anthrazit"
+      ],
+      "einschub_optional": "edelstahl",
+      "wasserstand_unter_kante_cm": 5.5,
+      "deckel_befuellbar_mit_randmaterial_bis_cm": 2,
+      "darstellung_hinweis": "Schmale, fast unsichtbare Öffnung, Deckel mit Material der Umrandung gefüllt",
+      "ueberlauf_ablassanschluss_mm": 32,
+      "hauptanschluss_mm": 63,
+      "korb_liter": 3.5,
+      "fuer_text": "Folien- und Betonbecken",
+      "grund_nicht": "Der Premium Skimmer ist für Folienbecken vorgesehen, nicht für den PP-Pool."
+    },
+    "standard_skimmer": {
+      "name": "Standard-Skimmer (im Set)",
+      "wasserstand_unter_kante_cm": 10,
+      "_hinweis": "Richtwert für die Darstellung: Der Standard-Skimmer sitzt tiefer als der Premium Skimmer (dort 5,5 cm). Der Wert 10 cm ist nicht aus den Datenblättern, bitte bestätigen."
+    }
+  },
+  "bezeichnungen": {
+    "gegenstromanlage": "Gegenstromanlage",
+    "funkfernbedienung": "Funkfernbedienung",
+    "bluetooth_app": "Steuerung per Bluetooth-App",
+    "led_beleuchtung": "LED-Beleuchtung",
+    "vormontage": "Vormontage der Bank",
+    "winter_schutzhuelle": "Winter-Schutzhülle",
+    "windhebeschutz": "Windhebeschutz",
+    "motorisierung": "Motorisierung",
+    "motor_verkleidung": "Motor-Verkleidung",
+    "isolierung_60_oder_120mm": "Isolierung (60 oder 120 mm)",
+    "unterkonstruktion_feinsteinzeug": "Unterkonstruktion für Feinsteinzeug",
+    "abschlussleiste_alu": "Abschlussleiste Alu",
+    "light": "Light",
+    "plus": "Plus",
+    "light_solar": "Light Solar",
+    "plus_solar": "Plus Solar",
+    "plus_solar_moov": "Plus Solar Moov'",
+    "eco": "Eco",
+    "premium": "Premium",
+    "holz": "Holz",
+    "feinsteinzeug": "Feinsteinzeug",
+    "ausfuehrung_A": "A: einteilig, Schienen an den Längsseiten",
+    "ausfuehrung_B": "B: zweiteilig, Schienen an den Längsseiten",
+    "ausfuehrung_C": "C: einteilig, Schienen an den Breitseiten",
+    "ausfuehrung_D": "D: zweiteilig, Schienen an den Breitseiten",
+    "weiss": "Weiß",
+    "blau": "Blau",
+    "grau": "Grau",
+    "sand": "Sand",
+    "anthrazit": "Anthrazit",
+    "silber": "Silber",
+    "hellgrau": "Hellgrau",
+    "mittelgrau": "Mittelgrau",
+    "beige": "Beige",
+    "solar": "Solar (Polycarbonat)",
+    "solar_alu_look": "Solar Alu-Look (Polycarbonat)",
+    "holzoptik": "Holzoptik",
+    "gelb_sand": "Gelb-Sand",
+    "rosa": "Rosa",
+    "terracotta": "Terracotta",
+    "glatt": "Glatt",
+    "genarbt": "Genarbt"
+  },
+  "skimmer_regel": {
+    "_hinweis": "Praxisregel vom Auftraggeber (2026-11-15). Die Schwelle ist ein Richtwert und bitte zu bestätigen.",
+    "position": "an der Schmalseite, gegenüber dem Einstieg",
+    "zwei_skimmer_ab_flaeche_m2": 24,
+    "anzeige": "Bei größeren Becken werden zwei Skimmer eingesetzt."
+  }
+}

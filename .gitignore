@@ -1,0 +1,5 @@
+# Datenblätter enthalten Preise und gehören NICHT ins Repository / auf den Server
+datenblaetter/
+.DS_Store
+*.tgz
+node_modules/
