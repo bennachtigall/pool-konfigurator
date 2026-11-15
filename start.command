@@ -3,8 +3,8 @@
 # es gibt keine Verbindung nach außen. Beenden mit Strg+C oder Fenster schließen.
 cd "$(dirname "$0")" || exit 1
 PORT=8765
-echo "poolmaris Pool-Konfigurator läuft auf http://localhost:$PORT/app/"
-( sleep 1; open "http://localhost:$PORT/app/" ) &
+echo "poolmaris Pool-Konfigurator läuft auf http://localhost:$PORT/ (Auswahl: KI-Version oder Version ohne KI)"
+( sleep 1; open "http://localhost:$PORT/" ) &
 exec python3 -m http.server "$PORT" --bind 127.0.0.1
 cd ~/Documents/poolmaris/Pool-Konfigurator && ./start.command
 http://localhost:8765/app/

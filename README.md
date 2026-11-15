@@ -10,6 +10,16 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 
 `index.html` direkt per Doppelklick zu öffnen funktioniert nicht, weil der Browser dann das Laden der Produktdaten blockiert.
 
+## Zwei Versionen
+
+Die Startseite (`index.html`, wird von `start.command` geöffnet) bietet zwei Versionen:
+
+- **KI-Version** (`app-ki/`): alles aus der Version ohne KI, dazu **„KI-Garten aus einem Foto (3D)“**. Ein einziges Gartenfoto genügt: Ein KI-Modell (Depth Anything V2 Small, lokal im Browser über onnxruntime-web) schätzt für jeden Bildpunkt die Entfernung. Daraus entsteht ein 3D-Gelände; Boden, Horizont und Maßstab werden automatisch geschätzt. Der Pool sitzt im Gelände (Aussparung, Einebnung ringsum, Schatten), lässt sich direkt anfassen und verschieben (Umschalt + Mausrad dreht ihn), und man kann sich etwa ±55° um den Fotostandpunkt umschauen. Startansicht = das Foto.
+  - Rechenzeit ca. 5 s pro Foto auf einem aktuellen Rechner. Modell (27 MB) und Rechenkern (15 MB) liegen im Ordner, es gibt keine Verbindung nach außen; das Foto verlässt den Rechner nicht und wird nicht gespeichert.
+  - Wenn der Boden im Foto nicht sicher erkannt wird (z. B. Baugrube, Mauer im Vordergrund), erscheint eine gelbe Horizontlinie; dann „Horizont automatisch“ ausschalten und von Hand einstellen. Stimmt der Maßstab nicht, zuerst die Kamerahöhe, dann „Entfernungen strecken“ anpassen.
+  - Grenze: Ein Foto zeigt nur die Vorderseite der Dinge. Je weiter man sich wegdreht, desto mehr gestreckte Stellen oder Lücken erscheinen hinter Bäumen und Hausecken.
+- **Version ohne KI** (`app/`): bewährter Stand ohne KI-Modell (Git-Markierung `ohne-ki`), falls die KI-Version Probleme macht.
+
 ## Bedienung
 
 - **Ansicht:** Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.
@@ -27,6 +37,8 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 ## Aufbau
 
 ```
+index.html                Startseite: Auswahl KI-Version / Version ohne KI
+app-ki/                   KI-Version (wie app/, zusätzlich tiefe.js, gelaende.js, lib/ort/, modelle/)
 CLAUDE.md                 Auftrag und Rahmenbedingungen
 start.command             lokaler Start
 daten/

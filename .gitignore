@@ -3,3 +3,5 @@ datenblaetter/
 .DS_Store
 *.tgz
 node_modules/
+# Testbilder (nur lokal)
+**/_test/

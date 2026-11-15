@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <!-- Sicherheitsrichtlinie: nur eigene Dateien, keine Verbindung nach außen (GitHub Pages kennt keine _headers) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'sha256-Ij7KniZE82u8ZXBzYH07GZ1k4bq/NkTw0T9GxpYqOXI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>poolmaris Pool-Konfigurator (KI-Version)</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Three.js liegt lokal in app/lib (kein CDN, keine Verbindung nach außen) -->
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.js" } }
+  </script>
+</head>
+<body>
+  <aside id="panel">
+    <h1>poolmaris<span>Pool-Konfigurator · KI-Version</span></h1>
+
+    <div id="meldung" class="meldung" hidden></div>
+    <div id="optionen"></div>
+  </aside>
+
+  <main>
+    <!-- Gartenfoto des Kunden (nur lokal, nie hochgeladen) liegt hinter der transparenten 3D-Ansicht -->
+    <img id="foto-bild" alt="Gartenfoto" hidden>
+    <canvas id="ansicht"></canvas>
+    <div id="horizont-linie" hidden><span>Horizont</span></div>
+    <input type="file" id="foto-datei" accept="image/*" hidden>
+    <input type="file" id="garten-dateien" accept="image/*" multiple hidden>
+    <input type="file" id="ki-datei" accept="image/*" hidden>
+    <div id="fehler" hidden></div>
+  </main>
+
+  <!-- Druckansicht der Zusammenfassung (nur beim Drucken sichtbar) -->
+  <div id="druck"></div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
