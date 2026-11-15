@@ -2,7 +2,9 @@
 // Läuft komplett lokal: lädt nur ../daten/poolmaris-konfiguration.json und lib/three*.js.
 import * as THREE from 'three';
 import { OrbitControls } from './lib/OrbitControls.js';
-import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl, baueKoerper } from './pool.js';
+import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl } from './pool.js';
+import { baueKoerper } from './koerper.js';
+import { schnittPosition, schnittEbene, baueSchnittflaeche } from './schnitt.js';
 import { baueUmrandung, steinMasse } from './umrandung.js';
 import { baueUeberdachung, waehleGroesse } from './ueberdachung.js';
 import { baueAbdeckung, saftyGroesse } from './abdeckung.js';
@@ -17,6 +19,7 @@ const komma = (z) => String(Math.round(z * 100) / 100).replace('.', ',');
 const canvas = $('ansicht');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
+renderer.localClippingEnabled = true; // Schnittebene für den Querschnitt
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
@@ -28,7 +31,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI / 2 - 0.03; // nicht unter den Rasen schauen
-controls.minDistance = 3;
+controls.minDistance = 0.6; // nah heranzoomen (z. B. für den Schnitt)
 controls.maxDistance = 45;
 controls.target.set(0, -0.3, 0);
 
@@ -62,7 +65,7 @@ function baueBoden(m, off) { // m.T = Beckentiefe
   boden = new THREE.Group();
   if (zustand.umgebung === 'frei') { // freies Modell: nur ein weicher Schatten auf neutralem Grund, kein Rasen
     const schatten = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.22 }));
-    schatten.position.y = -m.T - 0.06; schatten.receiveShadow = true;
+    schatten.position.y = -m.T - 0.3; schatten.receiveShadow = true;
     boden.add(schatten); scene.add(boden);
     return;
   }
@@ -121,7 +124,9 @@ const zustand = {
   poolId: 'systemsteinpool', groesseIdx: 0, farbe: 'blau', oberflaeche: 'glatt',
   einstieg: 'edelstahlleiter_v2a', seite: 'links',
   umrandung: '', umrandungFarbe: '',
-  led: '', ledAnzahl: 2, premiumSkimmer: false, skimmerFarbe: 'weiss',
+  led: '', ledAnzahl: 2, ledSeite: 'lang_a', ledLage: 0.5, // Beleuchtung meist an einer Seite, Lage verschiebbar
+  schnitt: 'aus', schnittLage: 0.5, // 'aus' | 'quer' | 'laengs'
+  premiumSkimmer: false, skimmerFarbe: 'weiss',
   ueberdachung: '', ueProfil: '', ueSchiene: 'links', ueOffen: false,
   abdeckung: '', ab: {},
   umgebung: 'rasen', // 'rasen' (Garten) oder 'frei' (freies 3D-Modell ohne Rasen)
@@ -129,8 +134,9 @@ const zustand = {
 };
 let meldung = '';
 let meldungKorrektur = ''; // Hinweis, wenn beim Laden Auswahl korrigiert wurde
-const szene = { pool: null, rand: null, ue: null, ab: null, sockel: null }; // aktuell sichtbare Gruppen
+const szene = { pool: null, rand: null, ue: null, ab: null, sockel: null, kappe: null }; // aktuell sichtbare Gruppen
 
+const VOLLE_BREITE = ['stufen_volle_breite', 'durchgehende_treppe', 'stufenanlage'];
 const poolDaten = () => daten.pools.find((p) => p.id === zustand.poolId);
 const name = (id) => daten.bezeichnungen[id] || id;
 const hexVon = (id) => {
@@ -160,6 +166,11 @@ function pruefe() {
   const { liste } = ledListe(daten, pool);
   if (zustand.led && !liste.some((l) => l.id === zustand.led)) zustand.led = '';
   if (zustand.premiumSkimmer && !skimmerStatus(daten, pool).ok) zustand.premiumSkimmer = false;
+  if (zustand.ledSeite === 'kurz_einstieg' && VOLLE_BREITE.includes(zustand.einstieg)) zustand.ledSeite = 'lang_a'; // dort liegen die Stufen
+  if (zustand.schnitt !== 'aus') {
+    if (!pool.aufbau) { hinweise.push('Schnitt ausgeschaltet: Den gibt es nur bei Systemstein-, Kompakt- und Polypropylen-Becken.'); zustand.schnitt = 'aus'; }
+    else zustand.umgebung = 'frei'; // der Schnitt braucht das freie Modell
+  }
 
   if (zustand.ueberdachung) {
     const u = daten.ueberdachungen.find((x) => x.id === zustand.ueberdachung);
@@ -218,11 +229,13 @@ function ersetze(schluessel, gruppe) {
   if (gruppe) scene.add(gruppe);
 }
 
-function neuBauen(kameraZuruecksetzen = false) {
+function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   const { pool, m, rand } = pruefe();
   const g = pool.groessen[zustand.groesseIdx];
   const istPP = pool.id === 'pp_pool';
   const wandHex = istPP ? daten.farben_3d.pp_platten[zustand.farbe].hex : daten.farben_3d.folie[zustand.farbe].hex;
+  const ws = -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100;
+  const wasserHex = (istPP ? daten.farben_3d.pp_platten : daten.farben_3d.folie)[zustand.farbe].wasser_hex;
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
 
   ersetze('pool', buildPool({
@@ -231,9 +244,9 @@ function neuBauen(kameraZuruecksetzen = false) {
     einbauHex: daten.farben_3d.einbauteile.weiss.hex, mitRand: !zustand.umrandung,
     skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel),
     // Premium Skimmer: Wasser 5,5 cm unter der Kante (Datenblatt); Standard-Skimmer sitzt tiefer
-    wasserstand: -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100,
+    wasserstand: ws, wasserHex,
     premiumSkimmer: zustand.premiumSkimmer ? { hex: hexVon(zustand.skimmerFarbe) } : null,
-    led: led ? { hex: daten.farben_3d.led[led.farbe], anzahl: zustand.ledAnzahl } : null,
+    led: led ? { hex: daten.farben_3d.led[led.farbe], anzahl: zustand.ledAnzahl, seite: zustand.ledSeite, lage: zustand.ledLage } : null,
   }));
 
   if (zustand.umrandung) {
@@ -241,7 +254,7 @@ function neuBauen(kameraZuruecksetzen = false) {
     ersetze('rand', baueUmrandung(pool, g, u, hexVon(zustand.umrandungFarbe)).group);
   } else ersetze('rand', null);
   const frei = zustand.umgebung === 'frei';
-  ersetze('sockel', frei ? baueKoerper(m, rand || 0.12) : null);
+  ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12) : null);
   scene.background = new THREE.Color(frei ? 0xe6eaed : 0xbfdcf0);
   scene.fog = frei ? null : new THREE.Fog(0xbfdcf0, 40, 120);
   controls.maxPolarAngle = frei ? Math.PI - 0.05 : Math.PI / 2 - 0.03; // frei: auch von unten ansehbar
@@ -262,14 +275,39 @@ function neuBauen(kameraZuruecksetzen = false) {
     }));
   } else ersetze('ab', null);
 
+  // Schnitt: Schnittebene auf alle Teile, Schnittfläche mit den Schichten; Überdachung/Abdeckung ausblenden
+  const schnittAktiv = zustand.schnitt !== 'aus';
+  let ebene = null, lage = 0;
+  if (schnittAktiv) {
+    lage = schnittPosition(m, zustand.schnitt, zustand.schnittLage);
+    ebene = schnittEbene(zustand.schnitt, lage);
+    ersetze('kappe', baueSchnittflaeche(m, pool.aufbau, zustand.schnitt, lage, { wandHex, wasserHex, ws }));
+  } else ersetze('kappe', null);
+  for (const k of ['pool', 'rand', 'sockel']) {
+    szene[k]?.traverse((o) => { if (o.material) [].concat(o.material).forEach((mt) => { mt.clippingPlanes = ebene ? [ebene] : null; mt.needsUpdate = true; }); });
+  }
+  if (szene.ue) szene.ue.visible = !schnittAktiv;
+  if (szene.ab) szene.ab.visible = !schnittAktiv;
+  schnittKamera = schnittAktiv ? { m, lage } : null;
+
   if (kameraZuruecksetzen) {
     const dist = Math.max(m.L, m.B) * 1.5 + 2;
     camera.position.set(-dist * 0.55, dist * 0.55, dist * 0.8);
     controls.target.set(0, -0.3, 0);
     controls.update();
   }
-  zeichnePanel();
+  if (panelNeuZeichnen) zeichnePanel();
   rendern();
+}
+
+let schnittKamera = null; // merkt Maße/Lage des aktiven Schnitts für die Kamera
+/** Stellt die Kamera schräg vor die Schnittfläche. */
+function kameraAufSchnitt() {
+  if (!schnittKamera) return;
+  const { m, lage } = schnittKamera, d = Math.max(m.L, m.B) * 0.9 + 2;
+  if (zustand.schnitt === 'quer') { camera.position.set(lage + d * 0.8, d * 0.35, d * 0.45); controls.target.set(lage, -m.T / 2, 0); }
+  else { camera.position.set(d * 0.45, d * 0.35, lage + d * 0.8); controls.target.set(0, -m.T / 2, lage); }
+  controls.update(); rendern();
 }
 
 const beckenText = (pool, x) => pool.form === 'rund' ? `Ø ${komma(x.durchmesser)} × ${komma(x.tiefe)} m`
@@ -278,7 +316,7 @@ const beckenText = (pool, x) => pool.form === 'rund' ? `Ø ${komma(x.durchmesser
 // ---------- Bedienfeld (wird aus Daten + Regeln erzeugt) ----------
 const el = (tag, attr = {}, ...kinder) => {
   const e = Object.assign(document.createElement(tag), attr);
-  kinder.flat().forEach((k) => e.append(k));
+  kinder.flat(Infinity).forEach((k) => e.append(k));
   return e;
 };
 const abschnitt = (titel, ...inhalt) => el('section', {}, el('h2', { textContent: titel }), ...inhalt);
@@ -300,6 +338,24 @@ function auswahl(label, optionen, wert, onChange) {
   return el('div', {}, el('label', { htmlFor: id, textContent: label }), sel,
     gruppen.size ? el('ul', { className: 'gruende' }, [...gruppen].map(([grund, texte]) => el('li', { textContent: `${texte.join(', ')}: ${grund}` }))) : '');
 }
+/** Schieberegler: beim Ziehen wird nur das Modell aktualisiert, erst beim Loslassen das Bedienfeld. */
+function regler(label, wert, min, max, schritt, onWert) {
+  const id = 'reg-' + label.replace(/\W/g, '');
+  const r = el('input', { type: 'range', id, min, max, step: schritt, value: wert });
+  r.addEventListener('input', () => onWert(+r.value, false));
+  r.addEventListener('change', () => onWert(+r.value, true));
+  return el('div', {}, el('label', { htmlFor: id, textContent: label }), r);
+}
+const ledSeiten = (pool) => {
+  const rund = pool.form === 'rund';
+  return [
+    { wert: 'lang_a', text: rund ? 'Seite 1' : 'Lange Seite 1' },
+    { wert: 'lang_b', text: rund ? 'Seite 2' : 'Lange Seite 2' },
+    { wert: 'beide', text: rund ? 'Beide Seiten' : 'Beide langen Seiten' },
+    { wert: 'kurz_einstieg', text: rund ? 'Einstiegsseite' : 'Schmalseite am Einstieg', ok: !VOLLE_BREITE.includes(zustand.einstieg), grund: 'Dort liegen die Stufen über die volle Breite.' },
+    { wert: 'kurz_gegenueber', text: rund ? 'Gegenüberliegende Seite' : 'Schmalseite gegenüber (Skimmer)' },
+  ];
+};
 const hinweis = (text) => el('p', { className: 'hinweis', textContent: text });
 function schalter(text, an, onChange, ok = true, grund = '') {
   const cb = el('input', { type: 'checkbox', checked: !!an, disabled: !ok });
@@ -376,7 +432,10 @@ function zeichnePanel() {
   root.append(abschnitt('Zubehör',
     leds.length
       ? [auswahl('Beleuchtung', [{ wert: '', text: 'Ohne LED' }, ...leds.map((l) => ({ wert: l.id, text: l.name }))], zustand.led, (v) => setze('led', v)),
-        zustand.led ? auswahl('Anzahl Scheinwerfer', [1, 2, 3, 4].map((n) => ({ wert: n, text: String(n) })), zustand.ledAnzahl, (v) => setze('ledAnzahl', +v)) : '']
+        zustand.led ? [
+          auswahl('Anzahl Scheinwerfer', [1, 2, 3, 4].map((n) => ({ wert: n, text: String(n) })), zustand.ledAnzahl, (v) => setze('ledAnzahl', +v)),
+          auswahl('Position der Scheinwerfer', ledSeiten(pool), zustand.ledSeite, (v) => setze('ledSeite', v)),
+          regler('Lage entlang der Wand', zustand.ledLage, 0.1, 0.9, 0.05, (v, fertig) => { zustand.ledLage = v; neuBauen(false, fertig); })] : '']
       : [el('label', { textContent: 'Beleuchtung' }), el('select', { disabled: true }, new Option('Nicht verfügbar')), el('ul', { className: 'gruende' }, el('li', { textContent: grundNicht }))],
     hinweis(`${skimmerAnzahl(m, daten.skimmer_regel)} Skimmer, ${daten.skimmer_regel.position}.${skimmerAnzahl(m, daten.skimmer_regel) === 2 ? ' ' + daten.skimmer_regel.anzeige : ''}`),
     schalter('poolmaris Premium Skimmer (fast unsichtbare Öffnung)', zustand.premiumSkimmer, (v) => setze('premiumSkimmer', v), sk.ok, sk.grund),
@@ -423,7 +482,13 @@ function zeichnePanel() {
 
   // --- Darstellung ---
   root.append(abschnitt('Darstellung',
-    auswahl('Umgebung', [{ wert: 'rasen', text: 'Rasen (Garten)' }, { wert: 'frei', text: 'Freies 3D-Modell (ohne Rasen)' }], zustand.umgebung, (v) => setze('umgebung', v)),
+    auswahl('Umgebung', [{ wert: 'rasen', text: 'Rasen (Garten)' }, { wert: 'frei', text: 'Freies 3D-Modell (ohne Rasen)' }], zustand.umgebung, (v) => { zustand.umgebung = v; if (v === 'rasen') zustand.schnitt = 'aus'; neuBauen(); }),
+    pool.aufbau
+      ? [auswahl('Schnitt durch das Becken', [{ wert: 'aus', text: 'Aus' }, { wert: 'quer', text: 'Querschnitt' }, { wert: 'laengs', text: 'Längsschnitt' }], zustand.schnitt,
+          (v) => { zustand.schnitt = v; if (v !== 'aus') zustand.umgebung = 'frei'; neuBauen(); kameraAufSchnitt(); }),
+        zustand.schnitt !== 'aus' ? [regler('Lage des Schnitts', zustand.schnittLage, 0.05, 0.95, 0.01, (v, fertig) => { zustand.schnittLage = v; neuBauen(false, fertig); if (!fertig) kameraAufSchnitt(); }),
+          hinweis('Der Schnitt zeigt: ' + pool.aufbau.schichten.join(' · '))] : '']
+      : hinweis('Einen Schnitt gibt es bei Systemstein-, Kompakt- und Polypropylen-Becken.'),
     auswahl('Qualität', [{ wert: 'niedrig', text: 'Niedrig (schnell)' }, { wert: 'mittel', text: 'Mittel' }, { wert: 'hoch', text: 'Hoch' }], qualitaet, (v) => { setzeQualitaet(v); }),
     hinweis('Bedienung: Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.')));
   panel.scrollTop = scroll;
@@ -487,7 +552,7 @@ async function glbSpeichern() {
     // Der GLB enthält den Pool immer als geschlossenen Körper (Außenwand + Boden), nie den Rasen.
     const pool = poolDaten(), m = masse(pool, pool.groessen[zustand.groesseIdx]);
     const rand = zustand.umrandung ? steinMasse(daten.umrandungen.find((x) => x.id === zustand.umrandung)).b : 0.12;
-    const koerper = szene.sockel || baueKoerper(m, rand);
+    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand);
     const teile = [szene.pool, szene.rand, szene.ue, szene.ab, koerper].filter(Boolean);
     speichereDatei(dateiname(zustand.poolId, 'glb'), await exportiereGLB(teile));
     if (!szene.sockel) leereGruppe(koerper);
@@ -530,7 +595,7 @@ function sammleAuswahl() {
     : [['Beckenrandsteine', 'Ohne Umrandung (schlichte Kante)']]);
 
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
-  A('Zubehör', [['Beleuchtung', led ? `${led.name}, ${zustand.ledAnzahl} Stück` : 'Ohne LED'],
+  A('Zubehör', [['Beleuchtung', led ? `${led.name}, ${zustand.ledAnzahl} Stück, ${ledSeiten(pool).find((x) => x.wert === zustand.ledSeite).text}` : 'Ohne LED'],
     ['Skimmer', `${skimmerAnzahl(m, daten.skimmer_regel)} × ` + (zustand.premiumSkimmer ? `poolmaris Premium Skimmer, Einschub/Deckel ${name(zustand.skimmerFarbe)}` : 'Standard-Skimmer (im Set)')],
     ['Im Set enthalten', (pool.im_set_enthalten || []).join(', ')]]);
 

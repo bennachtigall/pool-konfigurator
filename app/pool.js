@@ -76,6 +76,39 @@ export function skimmerAnzahl(m, regel) {
 }
 
 /**
+ * Orte für die Beleuchtung. seite: lang_a, lang_b, beide (beide langen Seiten), kurz_einstieg, kurz_gegenueber.
+ * lage (0..1) verschiebt die Gruppe entlang der Wand, mehrere Scheinwerfer sitzen mit Abstand nebeneinander.
+ * Eine Seite ist der Normalfall (z. B. 2 Scheinwerfer an der langen Seite); bei "beide" wechseln sie sich ab.
+ */
+export function ledOrte(m, seite, lage, anzahl) {
+  const { L, B, form } = m;
+  const seiten = seite === 'beide' ? ['lang_a', 'lang_b'] : [seite];
+  const orte = [];
+  seiten.forEach((s, si) => {
+    const n = Math.ceil((anzahl - si) / seiten.length);
+    for (let i = 0; i < n; i++) orte.push(ledOrt(m, s, lage, i - (n - 1) / 2));
+  });
+  return orte;
+}
+
+function ledOrt(m, seite, lage, idx) {
+  const { L, B, form } = m;
+  if (form === 'rund') {
+    const basis = { lang_a: 270, lang_b: 90, kurz_einstieg: 180, kurz_gegenueber: 0 }[seite] ?? 270;
+    const a = (basis * Math.PI) / 180 + (lage - 0.5) * Math.PI + (idx * 1.2) / (L / 2);
+    return { x: Math.cos(a) * L / 2, z: Math.sin(a) * L / 2, nx: -Math.cos(a), nz: -Math.sin(a) };
+  }
+  if (seite === 'kurz_einstieg' || seite === 'kurz_gegenueber') {
+    const grenze = B / 2 - 0.35;
+    const z = Math.max(-grenze, Math.min(grenze, (lage - 0.5) * B * 0.7 + idx * 0.8));
+    return endpunkt(m, seite === 'kurz_einstieg' ? -1 : 1, z);
+  }
+  const gerade = form === 'oval' ? L - B : L, grenze = gerade / 2 - 0.3;
+  const x = Math.max(-grenze, Math.min(grenze, (lage - 0.5) * gerade * 0.8 + idx * 1.2));
+  return seite === 'lang_b' ? { x, z: B / 2, nx: 0, nz: -1 } : { x, z: -B / 2, nx: 0, nz: 1 };
+}
+
+/**
  * Orte für Skimmer, Düsen und Licht an der Beckenwand (x, z, Normale nach innen).
  * Skimmer: Schmalseite gegenüber dem Einstieg (Einstieg bei -x). Düsen: an den Längsseiten nahe dem Einstieg.
  */
@@ -126,7 +159,7 @@ export function buildPool(cfg) {
   // Wasser
   const wasser = new THREE.Mesh(
     new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.01))).rotateX(-Math.PI / 2),
-    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(cfg.wandHex).lerp(new THREE.Color(0x2fa8d8), 0.55), transparent: true, opacity: 0.62, roughness: 0.05, clearcoat: 1 })
+    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(cfg.wasserHex ?? 0x2e9fd8), transparent: true, opacity: 0.62, roughness: 0.05, clearcoat: 1 })
   );
   wasser.position.y = WS; wasser.renderOrder = 2;
   group.add(wasser);
@@ -172,7 +205,7 @@ export function buildPool(cfg) {
   if (cfg.led && cfg.led.anzahl > 0) {
     const ledMat = new THREE.MeshStandardMaterial({ color: cfg.led.hex, emissive: cfg.led.hex, emissiveIntensity: 1.4 });
     const ledGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 20);
-    orte.led.slice(0, cfg.led.anzahl).forEach((o) => ausrichten(new THREE.Mesh(ledGeo, ledMat), o, -0.95));
+    ledOrte(m, cfg.led.seite ?? 'lang_a', cfg.led.lage ?? 0.5, cfg.led.anzahl).forEach((o) => ausrichten(new THREE.Mesh(ledGeo, ledMat), o, WS - 0.6));
   }
 
   baueEinstieg(group, { m, einstieg: cfg.einstieg, seite: cfg.seite, r: cfg.richtwerte, wand, edelstahl, ws: WS });
@@ -249,21 +282,4 @@ function baueEinstieg(group, { m, einstieg, seite, r, wand, edelstahl, ws }) {
     else { const [za, zb] = zEcke(w); block(x0, x0 + i * d, za, zb, -h * i); }
   }
   if (mitBank) sitzbank(w);
-}
-
-/**
- * Geschlossener Poolkörper (Außenwand + Boden) für das freie 3D-Modell und den GLB-Export.
- * "off" = Dicke der Außenwand / Breite der Umrandung (m).
- */
-export function baueKoerper(m, off = 0.12) {
-  const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xbfc3c6, roughness: 0.9 });
-  const aussen = umrissPunkte(m, off), innen = umrissPunkte(m, 0);
-  const ring = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(aussen, [innen]), { depth: m.T + 0.05, bevelEnabled: false }).rotateX(-Math.PI / 2), mat);
-  ring.position.y = -(m.T + 0.05);
-  const platte = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(aussen), { depth: 0.05, bevelEnabled: false }).rotateX(-Math.PI / 2), mat);
-  platte.position.y = -(m.T + 0.05);
-  ring.name = 'Poolkoerper_Wand'; platte.name = 'Poolkoerper_Boden';
-  group.add(ring, platte);
-  return group;
 }

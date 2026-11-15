@@ -14,6 +14,8 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 
 - **Ansicht:** Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.
 - **Umgebung:** Unter „Darstellung“ lässt sich zwischen Rasen (Garten) und freiem 3D-Modell ohne Rasen umschalten. Das freie Modell zeigt den Pool als geschlossenen Körper und lässt sich auch von unten ansehen.
+- **Schnitt:** Im freien Modell lässt sich bei Systemstein-, Kompakt- und Polypropylen-Becken ein Quer- oder Längsschnitt zeigen (Schichten des Wandaufbaus, Lage per Regler). Der Aufbau steht pro Pool im Feld `aufbau` der JSON-Datei. Die Folie ist im Schnitt überhöht dargestellt.
+- **Beleuchtung:** Meist an einer Seite (Standard: 2 Scheinwerfer an der langen Seite). Seite und Lage entlang der Wand sind wählbar.
 - **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle (24 m², bestätigt) steht in `skimmer_regel` in der JSON-Datei.
 - **Qualität:** Im Bedienfeld unter „Darstellung“ lässt sich die Qualität runterschalten (schneller auf schwacher Grafik).
 - **Nicht kombinierbare Optionen** sind ausgegraut, darunter steht der Grund.
@@ -31,6 +33,8 @@ app/
   index.html, style.css   Oberfläche (Deutsch)
   main.js                 Zustand, Bedienfeld, 3D-Szene, Ergebnis festhalten
   pool.js                 Becken (rechteck, rund, oval), Treppen, Skimmer, Düsen, LED
+  koerper.js              geschlossener Poolkörper (Styroporsteine, PP-Fertigbecken) für das freie Modell und den GLB-Export
+  schnitt.js              Quer-/Längsschnitt mit Schichten des Wandaufbaus
   umrandung.js            Beckenrandsteine
   ueberdachung.js         Überdachungen (Größenwahl + Geometrie)
   abdeckung.js            Safty, WaluDeck, Roll'Top 100/300
@@ -45,7 +49,7 @@ Alle Produktdaten stehen in `daten/poolmaris-konfiguration.json`, nichts davon f
 
 - **Neue Größe, Farbe oder Option:** in der JSON-Datei ergänzen, die Oberfläche übernimmt sie.
 - **Regeln:** Pro Eintrag gibt es ein Feld `bedingungen` (z. B. `nur_formen`, `max_laenge`) mit dem Text, der als Begründung angezeigt wird. Die Texte unter `regeln` sind nur zur Dokumentation.
-- **Farben im 3D-Modell:** Abschnitt `farben_3d` (Richtwerte, mit echten Mustern abgleichen).
+- **Farben im 3D-Modell:** Abschnitt `farben_3d` (Richtwerte, mit echten Mustern abgleichen). Die Wasserfarben (`wasser_hex`) stammen aus qualitativen Ratgeberaussagen, keine Messwerte.
 - **Treppenmaße:** `treppen._richtwerte` (am 2026-11-15 bestätigt, nicht aus den Datenblättern).
 - **Keine Preise** in die Datei schreiben.
 - **Neue Produkte mit neuer Geometrie** (z. B. eine neue Abdeckung) brauchen zusätzlich Code in `app/`.

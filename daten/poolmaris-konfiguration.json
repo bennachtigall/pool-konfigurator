@@ -178,7 +178,7 @@
     },
     {
       "id": "pp_pool",
-      "name": "Kunststoff-Pool (PP-Platten)",
+      "name": "Polypropylen-Fertigbecken (PP)",
       "form": "rechteck",
       "bauweise": "Verschweißte Polypropylen-Platten, fugenlos; Wände 8 mm, Boden 6 mm; Wandisolation 20 mm",
       "plattenfarben": [
@@ -239,7 +239,24 @@
       "optionen": [
         "led_weiss",
         "led_rgb"
-      ]
+      ],
+      "aufbau": {
+        "typ": "pp_fertigbecken",
+        "wand_platte_mm": 8,
+        "boden_platte_mm": 6,
+        "daemmung_mm": 20,
+        "rippen": {
+          "abstand_m": 1.2,
+          "breite_m": 0.06,
+          "tiefe_m": 0.05,
+          "_hinweis": "Richtwerte nach Baustellenfotos (senkrechte Versteifungsrippen, waagerechte graue Rohre)"
+        },
+        "schichten": [
+          "PP-Platte innen: Wand 8 mm, Boden 6 mm",
+          "Wandisolation 20 mm (außen)",
+          "Versteifungsrippen mit Armierung, waagerechte Rohre"
+        ]
+      }
     },
     {
       "id": "systemsteinpool",
@@ -302,7 +319,26 @@
       ],
       "optionen": [
         "led_unterwasser"
-      ]
+      ],
+      "aufbau": {
+        "typ": "steine",
+        "stein_m": [
+          1.25,
+          0.25,
+          0.5
+        ],
+        "wanddicke_m": 0.25,
+        "boden": {
+          "dicke_m": 0.15,
+          "hinweis": "Bodenplatte bauseits, Richtwert (nicht aus dem Datenblatt)"
+        },
+        "schichten": [
+          "Styroporsteine P40, 125 × 25 × 50 cm, Nut und Feder (Wand 25 cm)",
+          "Schutzvlies",
+          "Folie 0,8 mm (im Schnitt überhöht dargestellt)",
+          "Bodenplatte bauseits (Richtwert)"
+        ]
+      }
     },
     {
       "id": "kompaktpool",
@@ -360,7 +396,26 @@
         "weiss",
         "sand",
         "grau"
-      ]
+      ],
+      "aufbau": {
+        "typ": "steine",
+        "stein_m": [
+          1.0,
+          0.25,
+          0.25
+        ],
+        "wanddicke_m": 0.25,
+        "boden": {
+          "dicke_m": 0.15,
+          "hinweis": "Bodenplatte bauseits, Richtwert (nicht aus dem Datenblatt)"
+        },
+        "schichten": [
+          "Styroporsteine P30, 100 × 25 × 25 cm, Nut und Feder (Wand 25 cm)",
+          "Schutzvlies",
+          "Folie 0,8 mm (im Schnitt überhöht dargestellt)",
+          "Bodenplatte bauseits (Richtwert)"
+        ]
+      }
     }
   ],
   "farben_3d": {
@@ -368,29 +423,35 @@
     "folie": {
       "blau": {
         "name": "Blau",
-        "hex": "#4A90C8"
+        "hex": "#4A90C8",
+        "wasser_hex": "#2E9FD8"
       },
       "sand": {
         "name": "Sand",
-        "hex": "#E3D3B0"
+        "hex": "#E3D3B0",
+        "wasser_hex": "#6CCFD2"
       },
       "grau": {
         "name": "Grau",
-        "hex": "#9AA3A8"
+        "hex": "#9AA3A8",
+        "wasser_hex": "#6F9CA8"
       }
     },
     "pp_platten": {
       "blau": {
         "name": "Blau",
-        "hex": "#5B9BD5"
+        "hex": "#5B9BD5",
+        "wasser_hex": "#2E9FD8"
       },
       "weiss": {
         "name": "Weiß",
-        "hex": "#F2F2EE"
+        "hex": "#F2F2EE",
+        "wasser_hex": "#5BBDE6"
       },
       "grau": {
         "name": "Grau",
-        "hex": "#8E979C"
+        "hex": "#8E979C",
+        "wasser_hex": "#6F9CA8"
       }
     },
     "einbauteile": {
@@ -455,7 +516,8 @@
     "led": {
       "weiss": "#FFFFFF",
       "rgb": "#59D3FF"
-    }
+    },
+    "_wasser_hinweis": "Wasserfarbe (wasser_hex) ist ein Richtwert aus qualitativen Aussagen in Ratgeber-/Händlerseiten (Recherche 2026-11-15), keine Messwerte: Blau = kräftiges klassisches Poolblau, Sand/Beige = helles, karibisches Türkis, Grau = neutraleres, weniger kräftiges Graublau. Bitte mit echten Fotos abgleichen."
   },
   "treppen": {
     "seitliche_treppe": {
