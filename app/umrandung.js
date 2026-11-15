@@ -2,6 +2,7 @@
 // Rechteckbecken: Steine werden an jeder Seite auf die Länge verteilt (Eckstein-Optik).
 // Ovalbecken: Steine werden als Radiensteine entlang der Kurve gelegt.
 import * as THREE from 'three';
+import { rauTextur } from './materialien.js';
 import { masse, umrissPunkte } from './pool.js';
 
 /** Steinmaße (m) aus dem Datenblatt-Eintrag. */
@@ -61,7 +62,7 @@ export function baueUmrandung(pool, groesse, u, hex) {
   }
 
   // Alle Steine als eine InstancedMesh (schont die Grafik)
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, bumpMap: rauTextur(1), bumpScale: 0.6 });
   const steine = new THREE.InstancedMesh(new THREE.BoxGeometry(1, st.h, bw), mat, platz.length);
   const basis = new THREE.Color(hex), farbe = new THREE.Color();
   const obenY = 0.02;

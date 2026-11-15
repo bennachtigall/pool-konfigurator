@@ -29,16 +29,32 @@ export function baueSchnittflaeche(m, aufbau, achse, lage, { wandHex, wasserHex,
   };
 
   if (aufbau.typ === 'steine') {
-    const [, t, sh0] = aufbau.stein_m, bd = aufbau.boden.dicke_m, fo = 0.006; // Folie überhöht (real 0,8 mm)
+    // Styroporstein = Dämmschale innen + Betonkern + Dämmschale außen; im Kern liegt der Baustahl (Richtwerte aus der JSON-Datei)
+    const bt = aufbau.beton, bd = bt.boden.dicke_m, fo = 0.006;                 // Folie überhöht (real 0,8 mm)
+    const [, , sh0] = aufbau.stein_m, di = bt.daemmung_innen_m, kern = bt.kern_m, da = bt.daemmung_aussen_m;
     const n = Math.max(1, Math.round(T / sh0)), sh = T / n;
+    const stahl = 0x2a1f1a, beton = 0x8d8e8a;
+    const punkt = (u, y, d) => { const c = new THREE.Mesh(new THREE.CircleGeometry(Math.max(d, 0.02) / 2, 14), new THREE.MeshStandardMaterial({ color: stahl, roughness: 0.5, metalness: 0.6, side: THREE.DoubleSide })); c.position.set(u, y, 0.002); g.add(c); };
+    const dStahl = bt.baustahl_wand.durchmesser_mm / 1000;
     for (const s of [-1, 1]) {
-      const a = s * halb, b = s * (halb + t);
-      flaeche(Math.min(a, b), Math.max(a, b), -T, 0, 0x3a3d3f, -0.001);                       // dunkler Hintergrund = Fugen
-      for (let k = 0; k < n; k++) flaeche(Math.min(a, b) + 0.003, Math.max(a, b) - 0.003, -T + k * sh + 0.004, -T + (k + 1) * sh - 0.004, 0xe9ebe6); // Steinlagen
-      flaeche(Math.min(a, a - s * fo), Math.max(a, a - s * fo), -T, 0, wandHex, 0.0006);       // Folie an der Wand
+      const u0 = s * halb, u1 = u0 + s * di, u2 = u1 + s * kern, u3 = u2 + s * da;     // innen -> außen
+      const lo = (p, q) => [Math.min(p, q), Math.max(p, q)];
+      flaeche(...lo(u0, u3), -T, 0, 0x3a3d3f, -0.001);                                  // dunkler Grund = Fugen
+      for (let k = 0; k < n; k++) {                                                      // Dämmschalen je Steinlage
+        const y0 = -T + k * sh + 0.004, y1 = -T + (k + 1) * sh - 0.004;
+        flaeche(...lo(u0, u1), y0, y1, 0xf0f2ee); flaeche(...lo(u2, u3), y0, y1, 0xe9ebe6);
+      }
+      flaeche(...lo(u1, u2), -T, 0, beton);                                              // Betonkern, durchgehend vergossen
+      const mitte = (u1 + u2) / 2;
+      flaeche(mitte - 0.006, mitte + 0.006, -T + 0.05, -0.05, stahl, 0.0015);              // senkrechter Baustahl (überhöht dargestellt)
+      for (let y = -T + 0.125; y < -0.05; y += bt.baustahl_wand.abstand_m) punkt(mitte, y, dStahl); // waagerechter Baustahl im Schnitt
+      flaeche(Math.min(u0, u0 - s * fo), Math.max(u0, u0 - s * fo), -T, 0, wandHex, 0.0006);       // Folie an der Wand
     }
-    flaeche(-halb, halb, -T, -T + fo, wandHex, 0.0006);                                         // Folie am Boden
-    flaeche(-(halb + t), halb + t, -T - bd, -T, 0x9a9d9f);                                      // Bodenplatte
+    flaeche(-halb, halb, -T, -T + fo, wandHex, 0.0006);                                  // Folie am Boden
+    flaeche(-(halb + di + kern + da), halb + di + kern + da, -T - bd, -T, beton);        // Betonbodenplatte
+    const dm = bt.boden.matte_durchmesser_mm / 1000, ext = halb + di + kern + da - 0.05;
+    for (let u = -ext; u <= ext + 1e-6; u += bt.boden.abstand_m) punkt(u, -T - bd * 0.7, dm);        // Bewehrungsmatte im Schnitt
+    flaeche(-ext, ext, -T - bd * 0.7 - 0.004, -T - bd * 0.7 + 0.004, stahl, 0.0015);   // Längsstab der Matte
   } else if (aufbau.typ === 'pp_fertigbecken') {
     const wp = aufbau.wand_platte_mm / 1000, dm = aufbau.daemmung_mm / 1000, bp = aufbau.boden_platte_mm / 1000;
     for (const s of [-1, 1]) {

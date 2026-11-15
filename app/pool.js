@@ -2,6 +2,7 @@
 // Koordinaten: x = Länge, z = Breite, y = Höhe. Beckenkante liegt bei y = 0, der Boden bei y = -Tiefe.
 // Alle Maße in Metern. Maße, Farben und Treppen-Richtwerte kommen aus der JSON-Datei.
 import * as THREE from 'three';
+import { wasserNormal } from './materialien.js';
 
 export const WASSERSTAND = -0.10; // Vorgabe: Wasserspiegel unter der Beckenkante (m); je nach Skimmer überschrieben (cfg.wasserstand)
 
@@ -112,7 +113,7 @@ function ledOrt(m, seite, lage, idx) {
  * Orte für Skimmer, Düsen und Licht an der Beckenwand (x, z, Normale nach innen).
  * Skimmer: Schmalseite gegenüber dem Einstieg (Einstieg bei -x). Düsen: an den Längsseiten nahe dem Einstieg.
  */
-function wandOrte(m, anzSkimmer) {
+export function wandOrte(m, anzSkimmer) {
   const { L, B, form } = m;
   const skimmer = anzSkimmer === 2 ? [-B / 4, B / 4].map((z) => endpunkt(m, 1, z)) : [endpunkt(m, 1, 0)];
   let duesen, led;
@@ -145,7 +146,7 @@ export function buildPool(cfg) {
   const group = new THREE.Group();
   const outline = umrissPunkte(m);
 
-  const wand = new THREE.MeshStandardMaterial({ color: cfg.wandHex, roughness: cfg.rauigkeit ?? 0.55, side: THREE.DoubleSide });
+  const wand = new THREE.MeshPhysicalMaterial({ color: cfg.wandHex, roughness: cfg.rauigkeit ?? 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, side: THREE.DoubleSide });
   const einbau = new THREE.MeshStandardMaterial({ color: cfg.einbauHex, roughness: 0.5 });
   const edelstahl = new THREE.MeshStandardMaterial({ color: 0xe6eaec, metalness: 0.25, roughness: 0.35 });
 
@@ -159,9 +160,9 @@ export function buildPool(cfg) {
   // Wasser
   const wasser = new THREE.Mesh(
     new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.01))).rotateX(-Math.PI / 2),
-    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(cfg.wasserHex ?? 0x2e9fd8), transparent: true, opacity: 0.62, roughness: 0.05, clearcoat: 1 })
+    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(cfg.wasserHex ?? 0x2e9fd8).multiplyScalar(0.8), transparent: true, opacity: 0.8, roughness: 0.12, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.15, ior: 1.33, specularIntensity: 0.5, envMapIntensity: 0.45, normalMap: wasserNormal(), normalScale: new THREE.Vector2(0.07, 0.07) })
   );
-  wasser.position.y = WS; wasser.renderOrder = 2;
+  wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = 2;
   group.add(wasser);
 
   // Schlichte Beckenkante, solange keine Umrandung gewählt ist
@@ -278,7 +279,7 @@ function baueEinstieg(group, { m, einstieg, seite, r, wand, edelstahl, ws }) {
     if (volleBreite) block(x0, x0 + i * d, -B / 2, B / 2, -h * i);
     else if (diagonal) keil('diagonal', i);
     else if (rund) keil('rund', i);
-    else if (art === 'seitliche_treppe') block(x0, x0 + i * d, -w / 2, w / 2, -h * i); // mittig an der Schmalseite
+    else if (art === 'seitliche_treppe') { const [za, zb] = zEcke(Math.min(r.seitliche_treppe_breite_m, B * 0.7)); block(x0, x0 + i * d, za, zb, -h * i); } // an der Schmalseite, links oder rechts
     else { const [za, zb] = zEcke(w); block(x0, x0 + i * d, za, zb, -h * i); }
   }
   if (mitBank) sitzbank(w);

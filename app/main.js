@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { OrbitControls } from './lib/OrbitControls.js';
 import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl } from './pool.js';
 import { baueKoerper } from './koerper.js';
+import { baueUmgebungen } from './umgebung.js';
+import { wasserNormal } from './materialien.js';
 import { schnittPosition, schnittEbene, baueSchnittflaeche } from './schnitt.js';
 import { baueUmrandung, steinMasse } from './umrandung.js';
 import { baueUeberdachung, waehleGroesse } from './ueberdachung.js';
@@ -22,12 +24,13 @@ renderer.shadowMap.enabled = true;
 renderer.localClippingEnabled = true; // Schnittebene für den Querschnitt
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.7;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xbfdcf0);
 scene.fog = new THREE.Fog(0xbfdcf0, 40, 120);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2500);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI / 2 - 0.03; // nicht unter den Rasen schauen
@@ -35,7 +38,8 @@ controls.minDistance = 0.6; // nah heranzoomen (z. B. für den Schnitt)
 controls.maxDistance = 45;
 controls.target.set(0, -0.3, 0);
 
-scene.add(new THREE.HemisphereLight(0xdcecff, 0x6f8a4a, 1.0));
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x6f8a4a, 1.0);
+scene.add(hemi);
 const sonne = new THREE.DirectionalLight(0xfff2dd, 2.6);
 sonne.position.set(8, 14, 6);
 sonne.castShadow = true;
@@ -43,6 +47,10 @@ sonne.shadow.camera.left = sonne.shadow.camera.bottom = -10;
 sonne.shadow.camera.right = sonne.shadow.camera.top = 10;
 sonne.shadow.camera.far = 45;
 scene.add(sonne);
+const umg = baueUmgebungen(renderer); // Himmel + Spiegelungskarten
+scene.add(umg.sky);
+sonne.position.copy(umg.sonne).multiplyScalar(20); // Sonnenlicht passend zum Himmel
+sonne.shadow.bias = -0.0004; sonne.shadow.normalBias = 0.03;
 
 // ---------- Rasen mit Loch für das Becken ----------
 function rasenTextur() {
@@ -84,11 +92,25 @@ function baueBoden(m, off) { // m.T = Beckentiefe
 
 // ---------- Qualitätsstufen ----------
 const QUALITAET = {
-  niedrig: { pixel: 0.75, schatten: false, schattenGroesse: 512 },
-  mittel: { pixel: 1, schatten: true, schattenGroesse: 1024 },
-  hoch: { pixel: Math.min(window.devicePixelRatio || 1, 2), schatten: true, schattenGroesse: 2048 },
+  niedrig: { pixel: 0.75, schatten: false, schattenGroesse: 512, env: false, anim: false },
+  mittel: { pixel: 1, schatten: true, schattenGroesse: 1024, env: true, anim: false },
+  hoch: { pixel: Math.min(window.devicePixelRatio || 1, 2), schatten: true, schattenGroesse: 2048, env: true, anim: false },
+  ultra: { pixel: Math.min((window.devicePixelRatio || 1) * 1.5, 3), schatten: true, schattenGroesse: 4096, env: true, anim: true }, // mit bewegtem Wasser
 };
-let qualitaet = 'mittel';
+let qualitaet = 'hoch';
+
+/** Himmel/Studio, Spiegelungen und Lichtstärke je nach Umgebung und Qualität. */
+function umgebungSetzen(frei) {
+  const q = QUALITAET[qualitaet];
+  umg.sky.visible = !frei;
+  scene.background = frei ? new THREE.Color(0xe6eaed) : null;
+  scene.fog = frei ? null : new THREE.Fog(0xc9dcec, 80, 600);
+  scene.environment = q.env ? (frei ? umg.studioEnv : umg.himmelEnv) : null;
+  scene.environmentIntensity = frei ? 0.7 : 0.35;
+  hemi.intensity = q.env ? 0.2 : 0.9;
+  sonne.intensity = q.env ? 2.0 : 2.4;
+}
+
 function setzeQualitaet(name) {
   qualitaet = name;
   const q = QUALITAET[name];
@@ -97,6 +119,7 @@ function setzeQualitaet(name) {
   sonne.castShadow = q.schatten;
   sonne.shadow.mapSize.set(q.schattenGroesse, q.schattenGroesse);
   if (sonne.shadow.map) { sonne.shadow.map.dispose(); sonne.shadow.map = null; }
+  umgebungSetzen(zustand.umgebung === 'frei');
   scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((mt) => { mt.needsUpdate = true; }); });
   groesseAnpassen();
 }
@@ -113,7 +136,12 @@ function groesseAnpassen() {
   rendern();
 }
 window.addEventListener('resize', groesseAnpassen);
-renderer.setAnimationLoop(() => {
+let letzterFrame = 0;
+renderer.setAnimationLoop((zeit) => {
+  if (QUALITAET[qualitaet].anim && zeit - letzterFrame > 33) { // Ultra: Wasser bewegt sich (ca. 30 Bilder/s)
+    const n = wasserNormal(); n.offset.set((zeit * 0.00003) % 1, (zeit * 0.000018) % 1);
+    brauchtRender = true; letzterFrame = zeit;
+  }
   if (controls.update()) brauchtRender = true;
   if (brauchtRender) { renderer.render(scene, camera); brauchtRender = false; }
 });
@@ -127,7 +155,7 @@ const zustand = {
   led: '', ledAnzahl: 2, ledSeite: 'lang_a', ledLage: 0.5, // Beleuchtung meist an einer Seite, Lage verschiebbar
   schnitt: 'aus', schnittLage: 0.5, // 'aus' | 'quer' | 'laengs'
   premiumSkimmer: false, skimmerFarbe: 'weiss',
-  ueberdachung: '', ueProfil: '', ueSchiene: 'links', ueOffen: false,
+  ueberdachung: '', ueProfil: '', ueSchiene: 'links', ueOeffnung: 0, abOeffnung: 0, // Öffnungsgrade 0 (zu) bis 1 (offen)
   abdeckung: '', ab: {},
   umgebung: 'rasen', // 'rasen' (Garten) oder 'frei' (freies 3D-Modell ohne Rasen)
   projekt: '', // optionaler Projektname für die Zusammenfassung (bleibt lokal)
@@ -254,21 +282,21 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
     ersetze('rand', baueUmrandung(pool, g, u, hexVon(zustand.umrandungFarbe)).group);
   } else ersetze('rand', null);
   const frei = zustand.umgebung === 'frei';
-  ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12) : null);
-  scene.background = new THREE.Color(frei ? 0xe6eaed : 0xbfdcf0);
-  scene.fog = frei ? null : new THREE.Fog(0xbfdcf0, 40, 120);
+  const technik = { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null }; // Technik außen am Körper
+  ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12, technik) : null);
+  umgebungSetzen(frei);
   controls.maxPolarAngle = frei ? Math.PI - 0.05 : Math.PI / 2 - 0.03; // frei: auch von unten ansehbar
   baueBoden(m, rand || 0.12);
 
   if (zustand.ueberdachung) {
     const u = daten.ueberdachungen.find((x) => x.id === zustand.ueberdachung);
     const gr = waehleGroesse(u, m, rand).groesse;
-    ersetze('ue', baueUeberdachung(u, gr, { profilHex: hexVon(zustand.ueProfil), schiene: zustand.ueSchiene, offen: zustand.ueOffen }));
+    ersetze('ue', baueUeberdachung(u, gr, { profilHex: hexVon(zustand.ueProfil), schiene: zustand.ueSchiene, oeffnung: zustand.ueOeffnung }));
   } else ersetze('ue', null);
 
   if (zustand.abdeckung) {
     const a = daten.abdeckungen.find((x) => x.id === zustand.abdeckung);
-    const o = { ...zustand.ab, solar: !!a.solar_varianten?.includes(zustand.ab.variante), led: !!zustand.ab.opt?.led_beleuchtung };
+    const o = { ...zustand.ab, oeffnung: zustand.abOeffnung, solar: !!a.solar_varianten?.includes(zustand.ab.variante), led: !!zustand.ab.opt?.led_beleuchtung };
     ersetze('ab', baueAbdeckung(a, m, rand || 0.12, o, {
       terrasse: daten.farben_3d.terrasse, lamellen: Object.fromEntries(Object.entries(daten.farben_3d.lamellen)),
       profil: daten.farben_3d.profil, verkleidung_bank: daten.farben_3d.verkleidung_bank,
@@ -453,7 +481,7 @@ function zeichnePanel() {
     if (pf.length > 1) ueBlock.push(el('label', { textContent: 'Profilfarbe' }), farbknoepfe(pf, zustand.ueProfil, hexVon, (id) => setze('ueProfil', id)));
     else if (pf.length === 1) ueBlock.push(hinweis(`Profilfarbe: ${name(pf[0])}`));
     if (ueGew.schienenseite) ueBlock.push(auswahl('Schiene', ueGew.schienenseite.map((s) => ({ wert: s, text: name(s) })), zustand.ueSchiene, (v) => setze('ueSchiene', v)));
-    ueBlock.push(schalter('Überdachung geöffnet anzeigen', zustand.ueOffen, (v) => setze('ueOffen', v)));
+    ueBlock.push(regler('Öffnung der Überdachung', zustand.ueOeffnung, 0, 1, 0.02, (v, fertig) => { zustand.ueOeffnung = v; neuBauen(false, fertig); }));
   }
   root.append(abschnitt('Überdachung', ueBlock));
 
@@ -461,7 +489,10 @@ function zeichnePanel() {
   const abOpt = daten.abdeckungen.map((a) => { const st = abdeckungStatus(a, pool, m); return { wert: a.id, text: a.name, ok: st.ok, grund: st.grund }; });
   const aGew = daten.abdeckungen.find((a) => a.id === zustand.abdeckung);
   const abBlock = [auswahl('Abdeckung', [{ wert: '', text: 'Keine' }, ...abOpt], zustand.abdeckung, (v) => { zustand.abdeckung = v; zustand.ab = {}; neuBauen(); })];
-  if (aGew) abBlock.push(...abdeckungOptionen(aGew, m));
+  if (aGew) {
+    abBlock.push(...abdeckungOptionen(aGew, m));
+    abBlock.push(regler(aGew.id === 'waludeck_origin' ? 'Terrasse verschieben' : 'Öffnung der Abdeckung', zustand.abOeffnung, 0, 1, 0.02, (v, fertig) => { zustand.abOeffnung = v; neuBauen(false, fertig); }));
+  }
   root.append(abschnitt('Abdeckung', abBlock));
 
   // --- Ergebnis festhalten (Phase 4) ---
@@ -489,7 +520,7 @@ function zeichnePanel() {
         zustand.schnitt !== 'aus' ? [regler('Lage des Schnitts', zustand.schnittLage, 0.05, 0.95, 0.01, (v, fertig) => { zustand.schnittLage = v; neuBauen(false, fertig); if (!fertig) kameraAufSchnitt(); }),
           hinweis('Der Schnitt zeigt: ' + pool.aufbau.schichten.join(' · '))] : '']
       : hinweis('Einen Schnitt gibt es bei Systemstein-, Kompakt- und Polypropylen-Becken.'),
-    auswahl('Qualität', [{ wert: 'niedrig', text: 'Niedrig (schnell)' }, { wert: 'mittel', text: 'Mittel' }, { wert: 'hoch', text: 'Hoch' }], qualitaet, (v) => { setzeQualitaet(v); }),
+    auswahl('Qualität', [{ wert: 'niedrig', text: 'Niedrig (schnell)' }, { wert: 'mittel', text: 'Mittel' }, { wert: 'hoch', text: 'Hoch (Standard)' }, { wert: 'ultra', text: 'Ultra (sehr scharf, bewegtes Wasser)' }], qualitaet, (v) => { setzeQualitaet(v); }),
     hinweis('Bedienung: Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.')));
   panel.scrollTop = scroll;
 }
@@ -552,7 +583,8 @@ async function glbSpeichern() {
     // Der GLB enthält den Pool immer als geschlossenen Körper (Außenwand + Boden), nie den Rasen.
     const pool = poolDaten(), m = masse(pool, pool.groessen[zustand.groesseIdx]);
     const rand = zustand.umrandung ? steinMasse(daten.umrandungen.find((x) => x.id === zustand.umrandung)).b : 0.12;
-    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand);
+    const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
+    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand, { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws: -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null });
     const teile = [szene.pool, szene.rand, szene.ue, szene.ab, koerper].filter(Boolean);
     speichereDatei(dateiname(zustand.poolId, 'glb'), await exportiereGLB(teile));
     if (!szene.sockel) leereGruppe(koerper);
@@ -640,7 +672,7 @@ async function start() {
     const antwort = await fetch(DATEN_URL, { cache: 'no-store' }); // Änderungen an der JSON-Datei sofort übernehmen
     if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
     daten = await antwort.json();
-    setzeQualitaet('mittel');
+    setzeQualitaet('hoch');
     groesseAnpassen();
     neuBauen(true);
   } catch (err) {

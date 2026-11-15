@@ -4,7 +4,8 @@
 //   "pp_fertigbecken" Polypropylen-Fertigbecken: Außenhaut mit Versteifungsrippen und Rohren (nach Baustellenfotos)
 //   sonst             einfacher, glatter Betonkörper
 import * as THREE from 'three';
-import { umrissPunkte, flaecheGeo } from './pool.js';
+import { rauTextur } from './materialien.js';
+import { umrissPunkte, flaecheGeo, wandOrte, ledOrte } from './pool.js';
 
 /** Dicke der Außenwand (m): so weit ragt der Körper über den Beckenrand hinaus. */
 export function koerperDicke(aufbau, off = 0.12) {
@@ -14,9 +15,9 @@ export function koerperDicke(aufbau, off = 0.12) {
 }
 
 /** Baut den Körper passend zum Aufbau des Pools. */
-export function baueKoerper(m, aufbau, off = 0.12) {
+export function baueKoerper(m, aufbau, off = 0.12, technik = null) {
   if (aufbau?.typ === 'steine') return steinKoerper(m, aufbau);
-  if (aufbau?.typ === 'pp_fertigbecken') return ppKoerper(m, aufbau);
+  if (aufbau?.typ === 'pp_fertigbecken') return ppKoerper(m, aufbau, technik);
   return allgemeinKoerper(m, off);
 }
 
@@ -58,7 +59,8 @@ function steinKoerper(m, a) {
     const lz = gerade ? B : B + 2 * t;           // kurze Seiten in den ungeraden Lagen
     for (const sx of [-1, 1]) for (const [p, q] of reihe(lz, sl, versatz)) teile.push({ x: sx * (L / 2 + t / 2), y, z: -lz / 2 + (p + q) / 2, len: q - p, rot: Math.PI / 2 });
   }
-  const steine = new THREE.InstancedMesh(new THREE.BoxGeometry(1, sh - 0.008, t - 0.006), mat(0xffffff, 0.95), teile.length);
+  const steineMat = mat(0xffffff, 0.95); steineMat.bumpMap = rauTextur(2); steineMat.bumpScale = 0.8; // körniges Styropor
+  const steine = new THREE.InstancedMesh(new THREE.BoxGeometry(1, sh - 0.008, t - 0.006), steineMat, teile.length);
   const o = new THREE.Object3D(), c = new THREE.Color();
   teile.forEach((s, i) => {
     o.position.set(s.x, s.y, s.z); o.rotation.set(0, s.rot, 0); o.scale.set(s.len - 0.008, 1, 1); o.updateMatrix();
@@ -74,7 +76,7 @@ function steinKoerper(m, a) {
 }
 
 /** PP-Fertigbecken: Außenhaut (Platte + Isolation), senkrechte Rippen, waagerechte Rohre, blaue Eckleisten. */
-function ppKoerper(m, a) {
+function ppKoerper(m, a, technik) {
   const { L, B, T } = m;
   const tw = (a.wand_platte_mm + a.daemmung_mm) / 1000, bp = (a.boden_platte_mm + a.daemmung_mm) / 1000;
   const r = a.rippen, gruppe = new THREE.Group();
@@ -104,5 +106,36 @@ function ppKoerper(m, a) {
     if (si === 0 || si === 2) alle.rotation.y = rot + Math.PI;
     gruppe.add(alle);
   });
+  if (technik) ppTechnik(gruppe, m, a, technik);
   return gruppe;
+}
+
+/**
+ * Technik außen am PP-Becken (wie auf den Baustellenfotos): Skimmer-Gehäuse mit Fallrohr,
+ * Rohre der Einlaufdüsen und weiße Lampengehäuse mit Kabelrohr.
+ */
+function ppTechnik(gruppe, m, a, technik) {
+  const tw = (a.wand_platte_mm + a.daemmung_mm) / 1000, rt = a.rippen.tiefe_m;
+  const orte = wandOrte(m, technik.skimmerAnzahl ?? 1);
+  const silber = mat(0xcfd3d6, 0.35, 0.6), grau = mat(0x3f4448, 0.6, 0.2), weiss = mat(0xf6f6f4, 0.45);
+  const aussen = (o, d) => new THREE.Vector3(o.x - o.nx * d, 0, o.z - o.nz * d);   // Punkt außerhalb der Wand
+  const drehen = (mesh, o) => { mesh.rotation.y = Math.atan2(o.nx, o.nz); return mesh; };
+  for (const o of orte.skimmer) {                       // Skimmer-Gehäuse (silbern gedämmt) + Fallrohr nach unten
+    const p = aussen(o, tw + rt + 0.17);
+    const g = drehen(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.3), silber), o); g.position.set(p.x, -0.22, p.z); gruppe.add(g);
+    const q = aussen(o, tw + rt + 0.1);
+    const rohr = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, m.T * 0.55, 12), grau); rohr.position.set(q.x, -0.43 - m.T * 0.275, q.z); gruppe.add(rohr);
+    const bogen = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), grau); bogen.position.set(q.x, -0.43, q.z); gruppe.add(bogen);
+  }
+  for (const o of orte.duesen) {                        // Düsenanschlüsse außen
+    const p = aussen(o, tw + 0.05);
+    const d = drehen(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.1, 12).rotateX(Math.PI / 2), grau), o); d.position.set(p.x, -0.55, p.z); gruppe.add(d);
+  }
+  if (technik.led && technik.led.anzahl > 0) {          // Lampengehäuse außen: weiße Dosen mit Kabelrohr
+    for (const o of ledOrte(m, technik.led.seite, technik.led.lage, technik.led.anzahl)) {
+      const p = aussen(o, tw + 0.04), y = technik.ws - 0.6;
+      const dose = drehen(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.07, 20).rotateX(Math.PI / 2), weiss), o); dose.position.set(p.x, y, p.z); gruppe.add(dose);
+      const kabel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 8), weiss); kabel.position.set(p.x, y + 0.2, p.z); gruppe.add(kabel);
+    }
+  }
 }

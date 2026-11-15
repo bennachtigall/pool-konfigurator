@@ -17,7 +17,8 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 - **Schnitt:** Im freien Modell lässt sich bei Systemstein-, Kompakt- und Polypropylen-Becken ein Quer- oder Längsschnitt zeigen (Schichten des Wandaufbaus, Lage per Regler). Der Aufbau steht pro Pool im Feld `aufbau` der JSON-Datei. Die Folie ist im Schnitt überhöht dargestellt.
 - **Beleuchtung:** Meist an einer Seite (Standard: 2 Scheinwerfer an der langen Seite). Seite und Lage entlang der Wand sind wählbar.
 - **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle (24 m², bestätigt) steht in `skimmer_regel` in der JSON-Datei.
-- **Qualität:** Im Bedienfeld unter „Darstellung“ lässt sich die Qualität runterschalten (schneller auf schwacher Grafik).
+- **Qualität:** Unter „Darstellung“ gibt es vier Stufen: Niedrig, Mittel, Hoch (Standard, mit Himmel und Spiegelungen) und Ultra (sehr scharf, bewegtes Wasser). Auf schwacher Grafik runterschalten.
+- **Öffnen und Verschieben:** Überdachung, Rollabdeckungen und WaluDeck lassen sich mit einem Regler öffnen bzw. verschieben.
 - **Nicht kombinierbare Optionen** sind ausgegraut, darunter steht der Grund.
 - **Ergebnis festhalten:** Zusammenfassung drucken oder als PDF sichern, Screenshot (PNG), 3D-Modell (GLB, der Pool immer als geschlossener Körper ohne Rasen), Konfiguration speichern und wieder laden. Alles wird direkt heruntergeladen, nichts hochgeladen.
 
@@ -34,13 +35,14 @@ app/
   main.js                 Zustand, Bedienfeld, 3D-Szene, Ergebnis festhalten
   pool.js                 Becken (rechteck, rund, oval), Treppen, Skimmer, Düsen, LED
   koerper.js              geschlossener Poolkörper (Styroporsteine, PP-Fertigbecken) für das freie Modell und den GLB-Export
+  materialien.js, umgebung.js   Wasser-Normalmap, Steinstruktur, Himmel und Spiegelungskarten
   schnitt.js              Quer-/Längsschnitt mit Schichten des Wandaufbaus
   umrandung.js            Beckenrandsteine
   ueberdachung.js         Überdachungen (Größenwahl + Geometrie)
   abdeckung.js            Safty, WaluDeck, Roll'Top 100/300
   regeln.js               Kombinierbarkeit, liest die Felder "bedingungen" aus der JSON
   export.js               Screenshot-, GLB-, Konfigurations-Dateien
-  lib/                    Three.js 0.187.0 lokal (MIT-Lizenz, siehe THREE-LICENSE.txt)
+  lib/                    Three.js 0.187.0 lokal (inkl. Sky, RoomEnvironment, GLTFExporter, OrbitControls) (MIT-Lizenz, siehe THREE-LICENSE.txt)
 ```
 
 ## Produktdaten pflegen
@@ -65,7 +67,7 @@ Siehe `offene_punkte` am Ende der JSON-Datei:
 ## Bekannte Grenzen
 
 - Alle Becken werden als eingelassen dargestellt (Rundpool ohne Handlauf und Stahlmantel über dem Rasen).
-- Überdachungen und Abdeckungen sind vereinfacht dargestellt (Roll'Top-Bankgröße geschätzt, WaluDeck ohne einzelne Modulbreiten, Safty ohne Aufwickelwalze).
+- Überdachungen und Abdeckungen sind detailliert, aber nicht maßstabsgetreu bis ins Letzte: Roll'Top-Bankgröße geschätzt, Elemente der Überdachung vereinfacht, Beton und Baustahl im Schnitt sind Richtwerte.
 - Überdachungen und Abdeckungen gibt es nur für Rechteckpools.
 - Die Wasserfläche ist ein einfaches, leicht durchsichtiges Rechteck ohne Wellen.
 - Nicht getestet: Touch-Bedienung, Handy-Ansicht, Leistung auf dem Firmen-Laptop, echter Druckdialog, GLB-Datei in einem 3D-Programm.

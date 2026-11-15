@@ -333,11 +333,27 @@
           "hinweis": "Bodenplatte bauseits, Richtwert (nicht aus dem Datenblatt)"
         },
         "schichten": [
-          "Styroporsteine P40, 125 × 25 × 50 cm, Nut und Feder (Wand 25 cm)",
+          "Styroporstein P40/P30, 25 cm: 5 cm Dämmung innen, 15 cm Betonkern, 5 cm Dämmung außen",
+          "Baustahl im Betonkern (Richtwert Ø 10 mm, Abstand 25 cm)",
           "Schutzvlies",
           "Folie 0,8 mm (im Schnitt überhöht dargestellt)",
-          "Bodenplatte bauseits (Richtwert)"
-        ]
+          "Betonbodenplatte mit Bewehrungsmatte (Richtwert, bauseits)"
+        ],
+        "beton": {
+          "_hinweis": "Richtwerte für die Darstellung, nicht aus den Datenblättern (Datenblatt nennt Beton/Baustahl nicht). Bitte bestätigen.",
+          "daemmung_innen_m": 0.05,
+          "kern_m": 0.15,
+          "daemmung_aussen_m": 0.05,
+          "baustahl_wand": {
+            "durchmesser_mm": 10,
+            "abstand_m": 0.25
+          },
+          "boden": {
+            "dicke_m": 0.15,
+            "matte_durchmesser_mm": 8,
+            "abstand_m": 0.15
+          }
+        }
       }
     },
     {
@@ -410,11 +426,27 @@
           "hinweis": "Bodenplatte bauseits, Richtwert (nicht aus dem Datenblatt)"
         },
         "schichten": [
-          "Styroporsteine P30, 100 × 25 × 25 cm, Nut und Feder (Wand 25 cm)",
+          "Styroporstein P30, 25 cm: 5 cm Dämmung innen, 15 cm Betonkern, 5 cm Dämmung außen",
+          "Baustahl im Betonkern (Richtwert Ø 10 mm, Abstand 25 cm)",
           "Schutzvlies",
           "Folie 0,8 mm (im Schnitt überhöht dargestellt)",
-          "Bodenplatte bauseits (Richtwert)"
-        ]
+          "Betonbodenplatte mit Bewehrungsmatte (Richtwert, bauseits)"
+        ],
+        "beton": {
+          "_hinweis": "Richtwerte für die Darstellung, nicht aus den Datenblättern (Datenblatt nennt Beton/Baustahl nicht). Bitte bestätigen.",
+          "daemmung_innen_m": 0.05,
+          "kern_m": 0.15,
+          "daemmung_aussen_m": 0.05,
+          "baustahl_wand": {
+            "durchmesser_mm": 10,
+            "abstand_m": 0.25
+          },
+          "boden": {
+            "dicke_m": 0.15,
+            "matte_durchmesser_mm": 8,
+            "abstand_m": 0.15
+          }
+        }
       }
     }
   ],
@@ -522,7 +554,7 @@
   "treppen": {
     "seitliche_treppe": {
       "name": "Seitliche Treppe",
-      "beschreibung": "Treppenbreiter Einstieg an der Beckenseite"
+      "beschreibung": "Treppe an der Schmalseite des Beckens, wahlweise links oder rechts (nicht mittig)"
     },
     "ecktreppe_rund": {
       "name": "Ecktreppe rund",
@@ -1328,6 +1360,56 @@
           "D": 8.2
         },
         "grund_ausfuehrung": "Schienen an den Breitseiten gibt es nur bis 8,20 m Beckenlänge."
+      },
+      "technik": {
+        "_hinweis": "Aus dem WaluDeck-Datenblatt (Seiten 2, 4, 5, 8); Belagsdicke ist ein Richtwert.",
+        "schiene_mm": {
+          "breite": 70,
+          "hoehe": 18.9
+        },
+        "rahmenhoehe_mm": {
+          "TM1": 125,
+          "TM2": 210
+        },
+        "bodenabstand_mm": {
+          "tief": 32.5,
+          "mittel": 52.5,
+          "hoch": 72.5
+        },
+        "gesamthoehe_mm": {
+          "TM1": {
+            "tief": 157.5,
+            "mittel": 177.5,
+            "hoch": 197.5
+          },
+          "TM2": {
+            "tief": 242.5,
+            "mittel": 262.5,
+            "hoch": 282.5
+          }
+        },
+        "modul_tm1_bis_laenge_m": 6.0,
+        "rollen_pro_modul": 4,
+        "belag_dicke_m": 0.03,
+        "terrasse_ueber_pool_m": {
+          "laengsschienen": {
+            "entlang": 0.44,
+            "quer": 0.5
+          },
+          "breitenschienen": {
+            "entlang": 0.45,
+            "quer": 0.5
+          }
+        },
+        "modulbreiten_m": [
+          1.017,
+          1.356,
+          1.695,
+          2.034,
+          2.373,
+          2.712,
+          3.051
+        ]
       }
     },
     {
