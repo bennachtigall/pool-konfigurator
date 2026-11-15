@@ -14,7 +14,7 @@ Voraussetzung: `python3` (auf dem Mac vorhanden).
 
 - **Ansicht:** Ziehen = drehen, Mausrad oder zwei Finger = zoomen, rechte Maustaste oder zwei Finger ziehen = verschieben.
 - **Umgebung:** Unter „Darstellung“ lässt sich zwischen Rasen (Garten) und freiem 3D-Modell ohne Rasen umschalten. Das freie Modell zeigt den Pool als geschlossenen Körper und lässt sich auch von unten ansehen.
-- **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle steht in `skimmer_regel` in der JSON-Datei (Richtwert, bitte bestätigen).
+- **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle (24 m², bestätigt) steht in `skimmer_regel` in der JSON-Datei.
 - **Qualität:** Im Bedienfeld unter „Darstellung“ lässt sich die Qualität runterschalten (schneller auf schwacher Grafik).
 - **Nicht kombinierbare Optionen** sind ausgegraut, darunter steht der Grund.
 - **Ergebnis festhalten:** Zusammenfassung drucken oder als PDF sichern, Screenshot (PNG), 3D-Modell (GLB, der Pool immer als geschlossener Körper ohne Rasen), Konfiguration speichern und wieder laden. Alles wird direkt heruntergeladen, nichts hochgeladen.

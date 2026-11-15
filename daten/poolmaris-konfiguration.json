@@ -1537,7 +1537,7 @@
     "standard_skimmer": {
       "name": "Standard-Skimmer (im Set)",
       "wasserstand_unter_kante_cm": 10,
-      "_hinweis": "Richtwert für die Darstellung: Der Standard-Skimmer sitzt tiefer als der Premium Skimmer (dort 5,5 cm). Der Wert 10 cm ist nicht aus den Datenblättern, bitte bestätigen."
+      "_hinweis": "Der Standard-Skimmer sitzt tiefer als der Premium Skimmer (dort 5,5 cm). Der Wert 10 cm ist nicht aus den Datenblättern, vom Auftraggeber am 2026-11-15 bestätigt."
     }
   },
   "bezeichnungen": {
@@ -1585,7 +1585,7 @@
     "genarbt": "Genarbt"
   },
   "skimmer_regel": {
-    "_hinweis": "Praxisregel vom Auftraggeber (2026-11-15). Die Schwelle ist ein Richtwert und bitte zu bestätigen.",
+    "_hinweis": "Praxisregel vom Auftraggeber, Schwelle 24 m² am 2026-11-15 bestätigt.",
     "position": "an der Schmalseite, gegenüber dem Einstieg",
     "zwei_skimmer_ab_flaeche_m2": 24,
     "anzeige": "Bei größeren Becken werden zwei Skimmer eingesetzt."
