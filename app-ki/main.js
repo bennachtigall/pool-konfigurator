@@ -197,7 +197,7 @@ function kiLageAnwenden() {
   ki.bilder.forEach((b, i) => {
     const y = THREE.MathUtils.degToRad(b.yaw);
     u.uKams.value[i].set(b.pos.x, b.pos.z, Math.sin(y), -Math.cos(y));
-    u.uKamCos.value[i] = Math.cos(THREE.MathUtils.degToRad(kiBildwinkel(b) / 2) * 0.97);
+    u.uKamCos.value[i] = Math.cos(THREE.MathUtils.degToRad(kiBildwinkel(b) / 2 + 2)); // bis an den Bildrand zuständig
   });
 }
 /** Lage der Fotos aus GPS und Kompass (iPhone): Hauptfoto im Ursprung, Blick nach −z; die anderen relativ dazu. */
@@ -229,20 +229,60 @@ function kiHorizontLinie() {
 let kiFotoblick = false, kiFotoIndex = 0; // Kamera steht auf dem Fotostandpunkt (bis der Nutzer selbst dreht)
 controls.addEventListener('start', () => { kiFotoblick = false; kiHorizontLinie(); });
 function kiInFotoansicht() { return kiFotoblick; }
-/** Kamera genau auf den Standpunkt von Foto i setzen (Ansicht = Foto). */
-function kiFotoansicht(i = kiFotoIndex) {
+/** Ziel der Kamera für die Ansicht von Foto i (Standort, Blickpunkt, Bildwinkel). */
+function kiAnsichtZiel(i) {
+  const b = ki.bilder[i], p = zustand.ki, k = b.kalib, yaw = THREE.MathUtils.degToRad(b.yaw);
+  const dist = k.neigung < -0.03 ? Math.min(p.hoehe / Math.tan(-k.neigung), 40) : 25;
+  return { pos: new THREE.Vector3(b.pos.x, p.hoehe, b.pos.z), ziel: new THREE.Vector3(b.pos.x + Math.sin(yaw) * dist, 0, b.pos.z - Math.cos(yaw) * dist), fov: THREE.MathUtils.radToDeg(2 * Math.atan(k.tanY)) };
+}
+/** Präsentation: nur so weit umschauen, wie es sauber aussieht (um den Fotostandpunkt herum). Profi-Modus: frei. */
+function kiGrenzen() {
+  const frei = zustand.umgebung !== 'ki' || zustand.ki.freiUmschauen || !ki.bilder[kiFotoIndex]?.kalib;
+  controls.enablePan = frei;
+  if (frei) { controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; controls.minDistance = 0.6; controls.maxDistance = 45; controls.minPolarAngle = zustand.umgebung === 'ki' ? 0.35 : 0; controls.maxPolarAngle = Math.PI / 2 - 0.03; return; }
+  const { pos, ziel } = kiAnsichtZiel(kiFotoIndex), d = pos.clone().sub(ziel);
+  const az = Math.atan2(d.x, d.z), pol = Math.acos(d.y / d.length()), l = d.length();
+  controls.minAzimuthAngle = az - 0.35; controls.maxAzimuthAngle = az + 0.35;      // ca. ±20° seitlich
+  controls.minPolarAngle = Math.max(0.2, pol - 0.25); controls.maxPolarAngle = Math.min(Math.PI / 2 - 0.05, pol + 0.12);
+  controls.minDistance = l * 0.55; controls.maxDistance = l * 1.25;
+}
+let kiFahrt = null; // laufende Kamerafahrt zwischen zwei Fotoansichten
+/** Kamera auf den Standpunkt von Foto i setzen (Ansicht = Foto); mit weicher Fahrt, wenn sofort = false. */
+function kiFotoansicht(i = kiFotoIndex, sofort = true) {
   const b = ki.bilder[i]; if (!b?.kalib) return;
   kiFotoIndex = i;
-  const p = zustand.ki, k = b.kalib, yaw = THREE.MathUtils.degToRad(b.yaw);
-  const dist = k.neigung < -0.03 ? Math.min(p.hoehe / Math.tan(-k.neigung), 40) : 25;
-  camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(k.tanY));
-  camera.position.set(b.pos.x, p.hoehe, b.pos.z);
-  controls.target.set(b.pos.x + Math.sin(yaw) * dist, 0, b.pos.z - Math.cos(yaw) * dist);
+  const z = kiAnsichtZiel(i);
+  if (!sofort) {
+    kiFahrt = { start: performance.now(), dauer: 900, von: { pos: camera.position.clone(), ziel: controls.target.clone(), fov: camera.fov }, nach: z, i };
+    controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; controls.minPolarAngle = 0; controls.maxPolarAngle = Math.PI; controls.minDistance = 0; controls.maxDistance = Infinity;
+    rendern(); return;
+  }
+  camera.fov = z.fov; camera.position.copy(z.pos); controls.target.copy(z.ziel); camera.lookAt(controls.target);
+  kiGrenzen(); controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie(); kiVorschauLeiste();
+  if ($('optionen').childElementCount) zeichnePanel(); // Hinweistext passt zur aktuellen Ansicht
+}
+/** Kamerafahrt fortschreiben (aus der Bildschleife). */
+function kiFahrtSchritt(jetzt) {
+  if (!kiFahrt) return false;
+  const t = Math.min(1, (jetzt - kiFahrt.start) / kiFahrt.dauer), e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // weich an- und abbremsen
+  camera.position.lerpVectors(kiFahrt.von.pos, kiFahrt.nach.pos, e);
+  controls.target.lerpVectors(kiFahrt.von.ziel, kiFahrt.nach.ziel, e);
+  camera.fov = THREE.MathUtils.lerp(kiFahrt.von.fov, kiFahrt.nach.fov, e); camera.updateProjectionMatrix();
   camera.lookAt(controls.target);
-  // Umschauen begrenzen: um die Blickrichtung dieses Fotos herum (bei Rundum-Fotos frei)
-  const rundum = ki.bilder.length >= 2;
-  controls.minAzimuthAngle = rundum ? -Infinity : -yaw - 0.95; controls.maxAzimuthAngle = rundum ? Infinity : -yaw + 0.95;
-  controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie();
+  if (t >= 1) { const i = kiFahrt.i; kiFahrt = null; kiFotoansicht(i, true); }
+  return true;
+}
+/** Vorschaubilder der Fotos unten im Bild: antippen = zu dieser Ansicht fahren. */
+function kiVorschauLeiste() {
+  const leiste = $('ansicht-leiste');
+  const zeigen = zustand.umgebung === 'ki' && ki.bilder.length > 1;
+  leiste.hidden = !zeigen; if (!zeigen) return;
+  leiste.replaceChildren(...ki.bilder.map((b, i) => {
+    const k = el('button', { type: 'button', className: 'ansicht-knopf' + (i === kiFotoIndex ? ' aktiv' : ''), title: i === 0 ? 'Hauptfoto' : `Foto ${i + 1}` },
+      el('img', { src: b.url, alt: '' }), el('span', { textContent: i === 0 ? 'Hauptfoto' : `Ansicht ${i + 1}` }));
+    k.addEventListener('click', () => kiFotoansicht(i, false));
+    return k;
+  }));
 }
 
 /** Maßstab nachmessen: zwei Punkte im Gelände anklicken, echte Länge eingeben → Kamerahöhe wird angepasst. */
@@ -381,7 +421,8 @@ renderer.setAnimationLoop((zeit) => {
     szene.pool?.traverse((o) => { const k = o.userData.kaustik; if (k) k.offset.set(Math.sin(zeit * 0.00021) * 0.08, (zeit * 0.00002) % 1); });
     brauchtRender = true; letzterFrame = zeit;
   }
-  if (zustand.umgebung !== 'foto' && controls.update()) brauchtRender = true;
+  if (kiFahrtSchritt(performance.now())) brauchtRender = true;
+  else if (zustand.umgebung !== 'foto' && controls.update()) brauchtRender = true;
   if (brauchtRender) { if (ki.uniforms) ki.uniforms.uBetrachter.value.copy(camera.position); bildRendern(); brauchtRender = false; }
 });
 
@@ -397,7 +438,7 @@ const zustand = {
   ueberdachung: '', ueProfil: '', ueSchiene: 'links', ueOeffnung: 0, abOeffnung: 0, // Öffnungsgrade 0 (zu) bis 1 (offen)
   abdeckung: '', ab: {},
   umgebung: 'rasen', // 'rasen' (Garten), 'frei' (freies 3D-Modell ohne Rasen) oder 'foto' (Kundengarten-Foto)
-  ki: { ...KI_STANDARD }, // KI-Garten: Kamera, Maßstab, Lage des Pools, Licht (Foto und Tiefe werden nicht gespeichert)
+  ki: { ...KI_STANDARD, freiUmschauen: false }, // KI-Garten: Kamera, Maßstab, Lage des Pools, Licht (Foto und Tiefe werden nicht gespeichert)
   garten: { ...GARTEN_STANDARD }, // Kundengarten 3D: Projektion der Fotos, Boden, Sonne (die Fotos selbst werden nicht gespeichert)
   foto: { ...FOTO_STANDARD }, // Kamera, Lage des Pools und Sonne im Foto (das Foto selbst wird nicht gespeichert)
   projekt: '', // optionaler Projektname für die Zusammenfassung (bleibt lokal)
@@ -549,7 +590,9 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   controls.maxDistance = zustand.umgebung === 'garten3d' ? zustand.garten.radius * 0.55 : zustand.umgebung === 'ki' ? 45 : 45;
   // KI-Garten: Umschauen nur so weit, wie das eine Foto Informationen hat (seitlich ca. ±55°, nicht unter den Boden)
   const kiModus = zustand.umgebung === 'ki';
-  if (!kiModus) { controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; }
+  if (!kiModus) { controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; controls.enablePan = true; }
+  else if (!kiFahrt) kiGrenzen();
+  kiVorschauLeiste();
   controls.minPolarAngle = kiModus ? 0.35 : 0; // im Garten innerhalb der Foto-Kuppel bleiben
   if (foto) fotoKamera(camera, zustand.foto);
   controls.maxPolarAngle = frei ? Math.PI - 0.05 : Math.PI / 2 - 0.03; // frei: auch von unten ansehbar
@@ -912,7 +955,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const ziele = [szene.pool, szene.rand].filter(Boolean);
     if (!strahl.intersectObjects(ziele, true).length) return;
     const p = bodenPunkt(e); if (!p) return;
-    ziehen = { dx: zustand.ki.x - p.x, dz: zustand.ki.z - p.z, ki: true };
+    ziehen = kiFotoIndex > 0 ? { ki: true, ausrichten: true, letzter: p.clone() } : { dx: zustand.ki.x - p.x, dz: zustand.ki.z - p.z, ki: true };
     e.stopImmediatePropagation(); // Kamerasteuerung bekommt diesen Klick nicht (sonst dreht sich die Ansicht mit)
     controls.enabled = false; canvas.setPointerCapture(e.pointerId);
     return;
@@ -925,7 +968,17 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   if (!ziehen) return;
   const p = bodenPunkt(e); if (!p) return;
-  if (ziehen.ki) {
+  if (ziehen.ausrichten) {
+    // Weiteres Foto ausrichten: Der Pool soll unter den Finger – dafür werden Foto UND Kamera gegenläufig verschoben,
+    // die Ansicht bleibt gleich, der Pool rutscht im Foto an die richtige Stelle.
+    const d = new THREE.Vector3().subVectors(ziehen.letzter, p); d.y = 0;
+    if (d.length() > 0.5) d.setLength(0.5); // pro Bewegung höchstens 0,5 m (flache Sichtstrahlen am Horizont treffen sonst sehr weit weg)
+    const b = ki.bilder[kiFotoIndex];
+    b.pos = { x: b.pos.x + d.x, z: b.pos.z + d.z }; b.quelle = 'ausgerichtet';
+    camera.position.add(d); controls.target.add(d); camera.lookAt(controls.target); camera.updateMatrixWorld(); // sofort, sonst rechnet der nächste Schritt mit der alten Lage
+    ziehen.letzter = p.clone().add(d);
+    kiLageAnwenden(); kiGrenzen(); rendern(); return;
+  } else if (ziehen.ki) {
     zustand.ki.x = THREE.MathUtils.clamp(p.x + ziehen.dx, -30, 30);
     zustand.ki.z = THREE.MathUtils.clamp(p.z + ziehen.dz, -60, 0);
   } else {
@@ -934,10 +987,19 @@ canvas.addEventListener('pointermove', (e) => {
   }
   neuBauen(false, false);
 });
-const ziehenEnde = () => { if (ziehen) { const war = ziehen.ki; ziehen = null; if (war) controls.enabled = true; zeichnePanel(); } };
+const ziehenEnde = () => { if (ziehen) { const war = ziehen.ki, aus = ziehen.ausrichten; ziehen = null; if (war) controls.enabled = true; if (aus) { ki.envSchluessel = ''; neuBauen(); } zeichnePanel(); } };
 canvas.addEventListener('pointerup', ziehenEnde);
 canvas.addEventListener('pointercancel', ziehenEnde);
 canvas.addEventListener('wheel', (e) => {
+  if (zustand.umgebung === 'ki' && e.shiftKey && kiFotoIndex > 0 && ki.bilder[kiFotoIndex]) { // weiteres Foto: Blickrichtung des Fotos fein drehen
+    e.preventDefault(); e.stopImmediatePropagation();
+    const b = ki.bilder[kiFotoIndex], dw = Math.sign(e.deltaY || e.deltaX) * 0.5;
+    b.yaw += dw; b.quelle = 'ausgerichtet';
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(-dw));
+    controls.target.sub(camera.position).applyQuaternion(q).add(camera.position); camera.lookAt(controls.target); camera.updateMatrixWorld();
+    kiLageAnwenden(); kiGrenzen(); rendern(); clearTimeout(canvas._t); canvas._t = setTimeout(() => { ki.envSchluessel = ''; neuBauen(); }, 400);
+    return;
+  }
   if (zustand.umgebung === 'ki' && e.shiftKey) { // Umschalt + Mausrad dreht den Pool im KI-Garten
     e.preventDefault(); e.stopImmediatePropagation();
     zustand.ki.drehung = ((zustand.ki.drehung + Math.sign(e.deltaY || e.deltaX) * 3 + 540) % 360) - 180;
@@ -1046,7 +1108,7 @@ function kiBedienung() {
   const knopf = (text, fn, hell = false) => { const b = el('button', { type: 'button', className: 'knopf' + (hell ? ' hell' : ''), textContent: text }); b.addEventListener('click', fn); return b; };
   const auto = schalter('Horizont automatisch erkennen', p.horizontAuto, (v) => { p.horizontAuto = v; if (!v && h?.kalib) p.horizont = +h.kalib.horizont.toFixed(3); neuBauen(); });
   if (!h) return [
-    el('div', { className: 'knoepfe' }, knopf('Gartenfoto(s) laden …', () => $('ki-datei').click())),
+    el('div', { className: 'knoepfe' }, knopf('Gartenfoto(s) laden …', () => $('ki-datei').click()), knopf('Foto-Anleitung für Kunden (drucken)', () => window.open('anleitung.html', '_blank'), true)),
     hinweis('Ein Foto genügt: Querformat, aus Augenhöhe, mit dem Platz für den Pool und etwas Horizont. Für ein Rundum-Ergebnis vom selben Standpunkt weitere Fotos nach rechts, links und hinten aufnehmen (bis zu 4). Alles läuft lokal, ohne Internet.'),
   ];
   // Fotoliste: Vorschau, Blickrichtung, Ansicht, Entfernen
@@ -1055,7 +1117,7 @@ function kiBedienung() {
     const info = el('div', {}, el('span', { textContent: i === 0 ? 'Hauptfoto' : `Foto ${i + 1}` }),
       el('span', { className: 'klein-info', textContent: b.exif?.f35 ? `${b.exif.f35} mm (KB) → ${komma(kiBildwinkel(b).toFixed(1))}°` : 'Bildwinkel: Regler' }));
     info.append(regler(`Kippung Foto ${i + 1} (°)`, b.kippung ?? 0, -15, 15, 0.5, (v, fertig) => { b.kippung = v; if (fertig) neuBauen(false, true); }));
-    const knoepfe = el('div', { className: 'bild-knoepfe' }, knopf('Ansicht', () => kiFotoansicht(i), true), i > 0 ? knopf('Entfernen', () => { const [x] = ki.bilder.splice(i, 1); URL.revokeObjectURL(x.url); kiFotoIndex = 0; ki.schluessel = ''; neuBauen(); kiFotoansicht(0); }, true) : '');
+    const knoepfe = el('div', { className: 'bild-knoepfe' }, knopf('Ansicht', () => kiFotoansicht(i, false), true), i > 0 ? knopf('Entfernen', () => { const [x] = ki.bilder.splice(i, 1); URL.revokeObjectURL(x.url); kiFotoIndex = 0; ki.schluessel = ''; neuBauen(); kiFotoansicht(0); }, true) : '');
     return el('div', { className: 'bildzeile' }, vorschau, info, knoepfe);
   });
   const messen = ki.messen ?? (ki.messen = { aktiv: false, punkte: [] });
@@ -1079,11 +1141,16 @@ function kiBedienung() {
   ];
   return [
     el('div', { className: 'knoepfe' }, knopf(ki.bilder.length < 4 ? 'Weiteres Foto hinzufügen …' : 'Maximal 4 Fotos', () => { if (ki.bilder.length < 4) $('ki-datei-weitere').click(); }),
-      knopf('Neu beginnen (anderes Hauptfoto) …', () => $('ki-datei').click(), true)),
+      knopf('Neu beginnen (anderes Hauptfoto) …', () => $('ki-datei').click(), true), knopf('Foto-Anleitung für Kunden (drucken)', () => window.open('anleitung.html', '_blank'), true)),
     ...liste,
     ki.bilder.length > 1 ? lageplanBlock() : '',
     hinweis(`Tiefe lokal berechnet (${ki.bilder.map((b) => komma((b.tiefe.ms / 1000).toFixed(1)) + ' s').join(', ')}). Die Fotos bleiben nur auf diesem Rechner.`),
-    hinweis('Bedienung: Ziehen = umschauen, Mausrad = zoomen. Den Pool direkt anfassen und verschieben, Umschalt + Mausrad dreht ihn.'),
+    ki.bilder.length > 1
+      ? hinweis(kiFotoIndex === 0
+          ? 'So geht’s: Im Hauptfoto den Pool an die gewünschte Stelle ziehen (Umschalt + Mausrad dreht ihn). Dann unten im Bild die anderen Ansichten antippen und dort den Pool an dieselbe Stelle ziehen – das Foto passt sich an.'
+          : `Ansicht ${kiFotoIndex + 1}: Den Pool an dieselbe Stelle ziehen wie im Hauptfoto – dabei wird nur dieses Foto angepasst. Umschalt + Mausrad dreht das Foto fein.`)
+      : hinweis('Bedienung: Den Pool anfassen und verschieben, Umschalt + Mausrad dreht ihn. Ziehen im Bild = leicht umschauen, Mausrad = zoomen.'),
+    schalter('Freies Umschauen (für Profis, kann unsauber aussehen)', p.freiUmschauen, (v) => { p.freiUmschauen = v; kiGrenzen(); if (!v) kiFotoansicht(kiFotoIndex, false); }),
     el('h3', { textContent: 'Pool im Garten' }),
     r('Drehung des Pools (°)', 'drehung', -180, 180, 1),
     r('Seitlich (m)', 'x', -30, 30, 0.1),
