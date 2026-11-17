@@ -354,7 +354,8 @@
             "abstand_m": 0.15
           }
         }
-      }
+      },
+      "anzahl_einlaufduesen": 4
     },
     {
       "id": "kompaktpool",
@@ -447,7 +448,8 @@
             "abstand_m": 0.15
           }
         }
-      }
+      },
+      "anzahl_einlaufduesen": 4
     }
   ],
   "farben_3d": {
@@ -1578,7 +1580,14 @@
         "bluetooth_app",
         "led_beleuchtung"
       ],
-      "grund_solar": "Bei Solarmodellen nicht verfügbar."
+      "grund_solar": "Bei Solarmodellen nicht verfügbar.",
+      "solarmodul": {
+        "_hinweis": "Nach den Fotos im Walter-Datenblatt (S. 1–2): kleines dunkles Modul, bündig in die Sitzfläche eingelassen, an einem Ende der Bank. Maße sind Schätzwerte aus den Fotos.",
+        "laenge_m": 0.42,
+        "tiefe_anteil": 0.62,
+        "abstand_ende_m": 0.12,
+        "rahmen_m": 0.012
+      }
     }
   ],
   "regeln": [
@@ -1733,5 +1742,31 @@
     "position": "an der Schmalseite, gegenüber dem Einstieg",
     "zwei_skimmer_ab_flaeche_m2": 24,
     "anzeige": "Bei größeren Becken werden zwei Skimmer eingesetzt."
+  },
+  "einlaufduesen_regel": {
+    "_hinweis": "Recherche 2026-11-17: Einlaufdüsen immer gegenüber dem Skimmer; obere Reihe ca. 30 cm unter der Beckenkante, untere Reihe ca. 35 cm über dem Boden; ab ca. 5 m mindestens 2 Düsen. Feste Norm gibt es nicht – Datenblattangabe hat Vorrang, sonst Richtwert nach Fläche.",
+    "nach_flaeche_m2": [
+      [
+        15,
+        2
+      ],
+      [
+        30,
+        3
+      ],
+      [
+        9999,
+        4
+      ]
+    ],
+    "obere_reihe_unter_kante_m": 0.3,
+    "untere_reihe_ueber_boden_m": 0.35,
+    "min_abstand_m": 0.6
+  },
+  "led_regel": {
+    "_hinweis": "Keine Herstelleranga­be gefunden; Richtwert: gleichmäßig über die Wand verteilt, Mitte ca. 60 cm unter dem Wasserspiegel, Abstand zu Ecken/Treppen mind. 0,5 m.",
+    "unter_wasserspiegel_m": 0.6,
+    "randabstand_m": 0.5,
+    "durchmesser_m": 0.17
   }
 }

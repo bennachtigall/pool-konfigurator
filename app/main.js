@@ -2,7 +2,7 @@
 // Läuft komplett lokal: lädt nur ../daten/poolmaris-konfiguration.json und lib/three*.js.
 import * as THREE from 'three';
 import { OrbitControls } from './lib/OrbitControls.js';
-import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl } from './pool.js';
+import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl, duesenOrte, duesenAnzahl, einstiegsBelegung, ledOrte } from './pool.js';
 import { baueKoerper } from './koerper.js';
 import { baueUmgebungen } from './umgebung.js';
 import { wasserNormal } from './materialien.js';
@@ -354,7 +354,7 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
 
   ersetze('pool', buildPool({
-    realistisch: QUALITAET[qualitaet].real,
+    realistisch: QUALITAET[qualitaet].real, duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
     pool, groesse: g, wandHex, rauigkeit: istPP ? (zustand.oberflaeche === 'genarbt' ? 0.9 : 0.3) : 0.55,
     einstieg: zustand.einstieg, seite: zustand.seite, richtwerte: daten.treppen._richtwerte,
     einbauHex: daten.farben_3d.einbauteile.weiss.hex, mitRand: !zustand.umrandung,
@@ -373,7 +373,7 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   // Welt: im Foto-Modus an die gewählte Stelle verschieben und drehen, sonst im Ursprung
   if (foto) { welt.position.set(zustand.foto.x, 0, zustand.foto.z); welt.rotation.y = THREE.MathUtils.degToRad(zustand.foto.drehung); }
   else { welt.position.set(0, 0, 0); welt.rotation.y = 0; }
-  const technik = { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null }; // Technik außen am Körper
+  const technik = technikAussen(pool, m, ws, led); // Technik außen am Körper (gleiche Lage wie innen)
   ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12, technik) : null);
   umgebungSetzen(zustand.umgebung);
   controls.enabled = !foto;
@@ -430,6 +430,16 @@ function kameraAufSchnitt() {
   if (zustand.schnitt === 'quer') { camera.position.set(lage + d * 0.8, d * 0.35, d * 0.45); controls.target.set(lage, -m.T / 2, 0); }
   else { camera.position.set(d * 0.45, d * 0.35, lage + d * 0.8); controls.target.set(0, -m.T / 2, lage); }
   controls.update(); rendern();
+}
+
+/** Lage von Skimmer, Düsen und Licht für die Technik außen am Becken (PP-Fertigbecken, GLB). */
+function technikAussen(pool, m, ws, led) {
+  const bel = einstiegsBelegung(m, zustand.einstieg, zustand.seite, daten.treppen._richtwerte), lr = daten.led_regel;
+  return {
+    skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws, led: !!led, ledTiefe: lr.unter_wasserspiegel_m,
+    duesen: duesenOrte(m, duesenAnzahl(pool, m, daten.einlaufduesen_regel), bel, daten.einlaufduesen_regel),
+    ledOrte: led ? ledOrte(m, zustand.ledSeite, zustand.ledLage, zustand.ledAnzahl, { xVon: -m.L / 2 + (m.form === 'oval' ? m.B / 2 : 0) + bel.tiefe + 0.3 }, lr.randabstand_m) : [],
+  };
 }
 
 const beckenText = (pool, x) => pool.form === 'rund' ? `Ø ${komma(x.durchmesser)} × ${komma(x.tiefe)} m`
@@ -810,7 +820,7 @@ async function glbSpeichern() {
     const pool = poolDaten(), m = masse(pool, pool.groessen[zustand.groesseIdx]);
     const rand = zustand.umrandung ? steinMasse(daten.umrandungen.find((x) => x.id === zustand.umrandung)).b : 0.12;
     const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
-    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand, { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws: -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null });
+    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand, technikAussen(pool, m, -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100, led));
     const teile = [szene.pool, szene.rand, szene.ue, szene.ab, koerper].filter(Boolean);
     speichereDatei(dateiname(zustand.poolId, 'glb'), await exportiereGLB(teile));
     if (!szene.sockel) leereGruppe(koerper);
@@ -855,6 +865,7 @@ function sammleAuswahl() {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
   A('Zubehör', [['Beleuchtung', led ? `${led.name}, ${zustand.ledAnzahl} Stück, ${ledSeiten(pool).find((x) => x.wert === zustand.ledSeite).text}` : 'Ohne LED'],
     ['Skimmer', `${skimmerAnzahl(m, daten.skimmer_regel)} × ` + (zustand.premiumSkimmer ? `poolmaris Premium Skimmer, Einschub/Deckel ${name(zustand.skimmerFarbe)}` : 'Standard-Skimmer (im Set)')],
+    ['Einlaufdüsen', `${duesenAnzahl(pool, m, daten.einlaufduesen_regel)} Stück, gegenüber dem Skimmer`],
     ['Im Set enthalten', (pool.im_set_enthalten || []).join(', ')]]);
 
   const ueGew = daten.ueberdachungen.find((u) => u.id === zustand.ueberdachung);

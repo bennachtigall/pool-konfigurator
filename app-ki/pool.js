@@ -77,36 +77,134 @@ export function skimmerAnzahl(m, regel) {
 }
 
 /**
- * Orte für die Beleuchtung. seite: lang_a, lang_b, beide (beide langen Seiten), kurz_einstieg, kurz_gegenueber.
- * lage (0..1) verschiebt die Gruppe entlang der Wand, mehrere Scheinwerfer sitzen mit Abstand nebeneinander.
- * Eine Seite ist der Normalfall (z. B. 2 Scheinwerfer an der langen Seite); bei "beide" wechseln sie sich ab.
+ * Orte für die Beleuchtung: gleichmäßig über die gewählte Wand verteilt (nicht dicht nebeneinander).
+ * seite: lang_a, lang_b, beide, kurz_einstieg, kurz_gegenueber. lage (0..1) verschiebt die Verteilung leicht.
+ * frei: { xVon } – an den Längsseiten beginnt der freie Bereich erst hinter der Treppe.
  */
-export function ledOrte(m, seite, lage, anzahl) {
+export function ledOrte(m, seite, lage, anzahl, frei = {}, rand = 0.5) {
   const { L, B, form } = m;
-  const seiten = seite === 'beide' ? ['lang_a', 'lang_b'] : [seite];
+  if (form === 'rund') {
+    const basis = { lang_a: 270, lang_b: 90, kurz_einstieg: 180, kurz_gegenueber: 0, beide: 270 }[seite] ?? 270;
+    const spanne = seite === 'beide' ? 300 : Math.min(150, anzahl * 50);               // Bogen, über den verteilt wird
+    return Array.from({ length: anzahl }, (_, i) => {
+      const a = THREE.MathUtils.degToRad(basis + (lage - 0.5) * 60 + (anzahl > 1 ? -spanne / 2 + (spanne * i) / (anzahl - 1) : 0));
+      return { x: Math.cos(a) * L / 2, z: Math.sin(a) * L / 2, nx: -Math.cos(a), nz: -Math.sin(a) };
+    });
+  }
+  const verteilen = (von, bis, n) => { // n Punkte gleichmäßig, Abstand zum Rand = halber Abstand untereinander
+    const len = Math.max(bis - von, 0.01), versatz = (lage - 0.5) * (len / Math.max(n, 1)) * 0.8;
+    return Array.from({ length: n }, (_, i) => THREE.MathUtils.clamp(von + (len * (i + 0.5)) / n + versatz, von, bis));
+  };
+  if (seite === 'kurz_einstieg' || seite === 'kurz_gegenueber') {
+    const r = (form === 'oval' ? B / 2 : B / 2) - rand;
+    return verteilen(-r, r, anzahl).map((z) => endpunkt(m, seite === 'kurz_einstieg' ? -1 : 1, z));
+  }
+  const gerade = form === 'oval' ? L - B : L;
+  const von = Math.max(-gerade / 2 + rand, frei.xVon ?? -Infinity), bis = gerade / 2 - rand;
+  const langA = (x) => ({ x, z: -B / 2, nx: 0, nz: 1 }), langB = (x) => ({ x, z: B / 2, nx: 0, nz: -1 });
+  if (seite === 'beide') return verteilen(von, bis, anzahl).map((x, i) => (i % 2 ? langB(x) : langA(x)));
+  return verteilen(von, bis, anzahl).map(seite === 'lang_b' ? langB : langA);
+}
+
+/**
+ * Belegung der Einstiegsseite (Schmalseite bei −x) durch Treppe/Leiter/Sitzbank, damit Düsen und Licht ausweichen.
+ * Rückgabe: { oben: [[z0,z1]…], unten: [[z0,z1]…], tiefe } – gesperrte Bereiche für die obere/untere Düsenreihe,
+ * tiefe = wie weit die Treppe ins Becken ragt (für Teile an den Längsseiten).
+ */
+export function einstiegsBelegung(m, einstieg, seite, r) {
+  const { B, T } = m, s = seite === 'rechts' ? 1 : -1;
+  if (!einstieg || /leiter/.test(einstieg)) {
+    const zc = s * Math.min(0.6, B / 4);
+    return { oben: [[zc - 0.4, zc + 0.4]], unten: [[zc - 0.4, zc + 0.4]], tiefe: 0.3 };
+  }
+  const n = Math.max(1, Math.min(r.stufenanzahl_bei_1_5m_tiefe, Math.floor((T - 0.2) / r.stufenhoehe_m)));
+  const w = Math.min(r.ecktreppe_schenkel_m, B * 0.7), tiefe = Math.max(n * r.stufentiefe_m, w) + 0.2;
+  if (['stufen_volle_breite', 'durchgehende_treppe', 'stufenanlage'].includes(einstieg)) return { oben: [[-B, B]], unten: [[-B, B]], tiefe: n * r.stufentiefe_m + 0.2 };
+  const breite = einstieg === 'seitliche_treppe' ? Math.min(r.seitliche_treppe_breite_m, B * 0.7) : w;
+  const ecke = s < 0 ? [-B / 2, -B / 2 + breite + 0.25] : [B / 2 - breite - 0.25, B / 2];
+  const bank = /sitz/.test(einstieg) ? (s < 0 ? [-B / 2 + breite, B / 2] : [-B / 2, B / 2 - breite]) : null;
+  return { oben: [ecke], unten: bank ? [ecke, bank] : [ecke], tiefe };
+}
+
+/** Freie Abschnitte in [von, bis] ohne die gesperrten Bereiche. */
+function freieAbschnitte(von, bis, gesperrt) {
+  let teile = [[von, bis]];
+  for (const [a, b] of gesperrt) teile = teile.flatMap(([p, q]) => (b <= p || a >= q ? [[p, q]] : [[p, Math.min(a, q)], [Math.max(b, p), q]]).filter(([x, y]) => y - x > 0.05));
+  return teile;
+}
+/** k Punkte gleichmäßig über mehrere Abschnitte verteilen (Abstand ≥ minAbstand, sonst weniger Punkte). */
+function aufAbschnitte(teile, k, minAbstand) {
+  const gesamt = teile.reduce((s, [a, b]) => s + b - a, 0);
+  k = Math.min(k, Math.max(0, Math.floor(gesamt / minAbstand)));
+  const pos = [];
+  for (let i = 0; i < k; i++) {
+    let t = (gesamt * (i + 0.5)) / k;
+    for (const [a, b] of teile) { if (t <= b - a) { pos.push(a + t); break; } t -= b - a; }
+  }
+  return pos;
+}
+
+/**
+ * Einlaufdüsen: immer auf der dem Skimmer gegenüberliegenden Seite (Skimmer bei +x, Düsen bei −x).
+ * Obere Reihe ca. 30 cm unter der Kante; passen nicht alle auf die Wand, kommt eine untere Reihe dazu,
+ * danach die Längsseiten direkt hinter der Treppe. Rückgabe: [{ x, z, nx, nz, y }].
+ */
+export function duesenOrte(m, anzahl, belegung, regel) {
+  const { L, B, T, form } = m;
+  const yOben = -regel.obere_reihe_unter_kante_m, yUnten = -T + regel.untere_reihe_ueber_boden_m;
+  if (form === 'rund') { // gegenüber dem Skimmer (Skimmer bei 0°), Bogen um 180°, Leiterbereich meiden
+    const R = L / 2, ort = (deg, y) => { const a = THREE.MathUtils.degToRad(deg); return { x: Math.cos(a) * R, z: Math.sin(a) * R, nx: -Math.cos(a), nz: -Math.sin(a), y }; };
+    const winkel = [150, 210, 125, 235].slice(0, anzahl);
+    return winkel.map((w) => ort(w, yOben));
+  }
+  const rand = 0.3, grenze = form === 'oval' ? B / 2 - 0.35 : B / 2 - rand;
   const orte = [];
-  seiten.forEach((s, si) => {
-    const n = Math.ceil((anzahl - si) / seiten.length);
-    for (let i = 0; i < n; i++) orte.push(ledOrt(m, s, lage, i - (n - 1) / 2));
-  });
+  const oben = aufAbschnitte(freieAbschnitte(-grenze, grenze, belegung.oben), anzahl, regel.min_abstand_m);
+  oben.forEach((z) => orte.push({ ...endpunkt(m, -1, z), y: yOben }));
+  if (orte.length < anzahl) {
+    const unten = aufAbschnitte(freieAbschnitte(-grenze, grenze, belegung.unten), anzahl - orte.length, regel.min_abstand_m);
+    unten.forEach((z) => orte.push({ ...endpunkt(m, -1, z), y: yUnten }));
+  }
+  // Rest: an den Längsseiten direkt hinter der Treppe, abwechselnd links/rechts
+  const xLang = -L / 2 + (form === 'oval' ? B / 2 : 0) + Math.max(belegung.tiefe, 0.4) + 0.3;
+  for (let i = 0; orte.length < anzahl; i++) {
+    const z = i % 2 ? B / 2 : -B / 2, x = xLang + Math.floor(i / 2) * regel.min_abstand_m;
+    orte.push({ x, z, nx: 0, nz: z > 0 ? -1 : 1, y: yOben });
+  }
   return orte;
 }
 
-function ledOrt(m, seite, lage, idx) {
-  const { L, B, form } = m;
-  if (form === 'rund') {
-    const basis = { lang_a: 270, lang_b: 90, kurz_einstieg: 180, kurz_gegenueber: 0 }[seite] ?? 270;
-    const a = (basis * Math.PI) / 180 + (lage - 0.5) * Math.PI + (idx * 1.2) / (L / 2);
-    return { x: Math.cos(a) * L / 2, z: Math.sin(a) * L / 2, nx: -Math.cos(a), nz: -Math.sin(a) };
-  }
-  if (seite === 'kurz_einstieg' || seite === 'kurz_gegenueber') {
-    const grenze = B / 2 - 0.35;
-    const z = Math.max(-grenze, Math.min(grenze, (lage - 0.5) * B * 0.7 + idx * 0.8));
-    return endpunkt(m, seite === 'kurz_einstieg' ? -1 : 1, z);
-  }
-  const gerade = form === 'oval' ? L - B : L, grenze = gerade / 2 - 0.3;
-  const x = Math.max(-grenze, Math.min(grenze, (lage - 0.5) * gerade * 0.8 + idx * 1.2));
-  return seite === 'lang_b' ? { x, z: B / 2, nx: 0, nz: -1 } : { x, z: -B / 2, nx: 0, nz: 1 };
+/** Anzahl Einlaufdüsen: Datenblattangabe des Pools, sonst Richtwert nach Beckenfläche. */
+export function duesenAnzahl(pool, m, regel) {
+  if (pool.anzahl_einlaufduesen) return pool.anzahl_einlaufduesen;
+  const f = beckenflaeche(m);
+  return regel.nach_flaeche_m2.find(([bis]) => f < bis)[1];
+}
+
+/** Einlaufdüse: weißer Flansch, Topf und schwenkbare Kugel mit Austrittsöffnung (ca. Ø 11 cm). */
+function duesenModell(mat) {
+  const g = new THREE.Group();
+  const dunkel = new THREE.MeshStandardMaterial({ color: 0x20282c, roughness: 0.7 });
+  const flansch = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.058, 0.012, 32), mat); flansch.position.y = 0.006;
+  const topf = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.012, 24, 1, true), dunkel); topf.position.y = 0.012;
+  const kugel = new THREE.Mesh(new THREE.SphereGeometry(0.026, 24, 16), mat); kugel.position.y = 0.012;
+  const loch = new THREE.Mesh(new THREE.CircleGeometry(0.009, 16).rotateX(-Math.PI / 2), dunkel); loch.position.y = 0.0385;
+  g.add(flansch, topf, kugel, loch);
+  return g;
+}
+
+/** Unterwasserscheinwerfer (flacher LED-Spot, ca. Ø 17 cm): Flansch, Reflektorring, leuchtende Linse. */
+function ledModell(hex, durchmesser) {
+  const r = durchmesser / 2, g = new THREE.Group();
+  const weiss = new THREE.MeshStandardMaterial({ color: 0xf4f4f2, roughness: 0.35 });
+  const flansch = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.03, 0.014, 40), weiss); flansch.position.y = 0.007;
+  const reflektor = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.8, r * 0.8, 0.004, 40), new THREE.MeshStandardMaterial({ color: 0xdfe6ea, metalness: 0.8, roughness: 0.2 })); reflektor.position.y = 0.015;
+  const linse = new THREE.Mesh(new THREE.SphereGeometry(r * 0.72, 32, 8, 0, Math.PI * 2, 0, 0.35).scale(1, 0.25, 1),
+    new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: 2.2, roughness: 0.15 }));
+  linse.position.y = 0.006;
+  g.add(flansch, reflektor, linse);
+  const licht = new THREE.PointLight(hex, 1.6, 4.5, 2); licht.position.y = 0.25; g.add(licht); // Lichtkegel ins Wasser
+  return g;
 }
 
 /**
@@ -174,11 +272,11 @@ export function buildPool(cfg) {
   if (cfg.realistisch) {
     const k = kaustikTextur().clone(); k.needsUpdate = true; k.repeat.set(L / 1.6, B / 1.6);
     const kaustik = new THREE.Mesh(new THREE.ShapeGeometry(flaecheGeo(umrissPunkte(m, -0.02))).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ map: k, color: 0x9fd8ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+      new THREE.MeshBasicMaterial({ map: k, color: 0x9fd8ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     // UVs in Weltmetern, damit das Muster nicht gestreckt ist
     const pos = kaustik.geometry.attributes.position, uv = kaustik.geometry.attributes.uv;
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / L + 0.5, pos.getZ(i) / B + 0.5);
-    kaustik.position.y = -T + 0.004; kaustik.name = 'Kaustik'; kaustik.userData.kaustik = k;
+    kaustik.position.y = -T + 0.012; kaustik.name = 'Kaustik'; kaustik.userData.kaustik = k;
     group.add(kaustik);
   }
   wasser.name = 'Wasser'; wasser.position.y = WS; wasser.renderOrder = 2;
@@ -220,16 +318,19 @@ export function buildPool(cfg) {
       anWand(new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.008, 0.30), einbau), o, -0.20, 0.028);
     }
   }
-  const duesenGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 16);
-  orte.duesen.forEach((o) => ausrichten(new THREE.Mesh(duesenGeo, einbau), o, -0.55));
+  // Einlaufdüsen gegenüber dem Skimmer, Treppe/Leiter werden ausgespart
+  const belegung = einstiegsBelegung(m, cfg.einstieg, cfg.seite, cfg.richtwerte);
+  const dRegel = cfg.duesenRegel ?? { nach_flaeche_m2: [[15, 2], [30, 3], [9999, 4]], obere_reihe_unter_kante_m: 0.3, untere_reihe_ueber_boden_m: 0.35, min_abstand_m: 0.6 };
+  duesenOrte(m, duesenAnzahl(cfg.pool, m, dRegel), belegung, dRegel).forEach((o) => ausrichten(duesenModell(einbau), o, o.y));
   if (cfg.led && cfg.led.anzahl > 0) {
-    const ledMat = new THREE.MeshStandardMaterial({ color: cfg.led.hex, emissive: cfg.led.hex, emissiveIntensity: 1.4 });
-    const ledGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.03, 20);
-    ledOrte(m, cfg.led.seite ?? 'lang_a', cfg.led.lage ?? 0.5, cfg.led.anzahl).forEach((o) => ausrichten(new THREE.Mesh(ledGeo, ledMat), o, WS - 0.6));
+    const lr = cfg.ledRegel ?? { unter_wasserspiegel_m: 0.6, randabstand_m: 0.5, durchmesser_m: 0.17 };
+    const frei = { xVon: -L / 2 + (m.form === 'oval' ? B / 2 : 0) + belegung.tiefe + 0.3 };
+    ledOrte(m, cfg.led.seite ?? 'lang_a', cfg.led.lage ?? 0.5, cfg.led.anzahl, frei, lr.randabstand_m)
+      .forEach((o) => ausrichten(ledModell(cfg.led.hex, lr.durchmesser_m), o, WS - lr.unter_wasserspiegel_m));
   }
 
   baueEinstieg(group, { m, einstieg: cfg.einstieg, seite: cfg.seite, r: cfg.richtwerte, wand, edelstahl, ws: WS });
-  group.traverse((o) => { if (o.isMesh && o !== wasser) { o.castShadow = o !== boden && o !== waende; } });
+  group.traverse((o) => { if (o.isMesh && o !== wasser) { o.castShadow = o !== boden && o !== waende && o.parent === group; } }); // Kleinteile werfen keine Schatten
   return group;
 }
 

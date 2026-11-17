@@ -101,11 +101,20 @@ export function panoramaBauen(p, liste = bilder) {
     if (fotos.length === 1) luecke = W - pw;
     if (luecke > 2) { const br = Math.min(luecke / 2 + 70, l.w); zeichneGespiegelt(b, l, true, br); zeichneGespiegelt(naechstes, lage(naechstes), false, br); } // bis zur Mitte der Lücke, dort überblenden
   });
+  // Boden unterhalb der Fotos einheitlich mit der Bodenfarbe füllen (sonst können gespiegelte Lücken-Füllungen
+  // oder Himmelsreste in den Boden der Kuppel geraten), weicher Übergang am unteren Fotorand
+  if (p.bodenFuellen) {
+    const unterkante = Math.min(...fotos.map((b) => { const l = lage(b); return l.y + l.h; }));
+    const gr = g.createLinearGradient(0, unterkante - 40, 0, unterkante + 60);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, unten[0]);
+    g.fillStyle = gr; g.fillRect(0, unterkante - 40, W, 100);
+    g.fillStyle = unten[0]; g.fillRect(0, unterkante + 60, W, H);
+  }
   // Fotos selbst, mit weichen Rändern, darunter die unterste Bildzeile zum Boden hin verlängert
   fotos.forEach((b) => {
     const l = lage(b);
     for (const dx of [-W, 0, W]) {
-      g.drawImage(b.img, 0, b.img.naturalHeight - 2, b.img.naturalWidth, 2, l.x + dx, l.y + l.h - 1, l.w, H - (l.y + l.h)); // Boden-Verlängerung
+      if (!p.bodenFuellen) g.drawImage(b.img, 0, b.img.naturalHeight - 2, b.img.naturalWidth, 2, l.x + dx, l.y + l.h - 1, l.w, H - (l.y + l.h)); // Boden-Verlängerung
       g.drawImage(b.img, 0, 0, b.img.naturalWidth, 2, l.x + dx, 0, l.w, l.y + 1);                                             // Himmel-Verlängerung
       g.drawImage(b.img, l.x + dx, l.y, l.w, l.h);
     }
@@ -154,7 +163,8 @@ export function gartenUmgebung(renderer, p) {
   if (cache.schluessel !== schluessel) {
     cache.textur?.dispose(); cache.env?.dispose();
     const t = new THREE.CanvasTexture(panoramaBauen(p));
-    t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace;
+    t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; // sonst Himmelsfarbe am Kuppelboden (Pol der Kugel)
     const pmrem = new THREE.PMREMGenerator(renderer);
     cache = { schluessel, textur: t, env: pmrem.fromEquirectangular(t).texture };
     pmrem.dispose();

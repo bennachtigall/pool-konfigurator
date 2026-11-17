@@ -38,6 +38,22 @@ function textur(art, wdh) {
   return t;
 }
 
+/** Solarzellen: dunkelblaue Zellen mit feinen Leiterbahnen. */
+let _solar = null;
+function solarTextur() {
+  if (_solar) return _solar;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#0d1a33'; g.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    const gr = g.createLinearGradient(x * 64, y * 64, x * 64 + 64, y * 64 + 64); gr.addColorStop(0, '#1b2f5c'); gr.addColorStop(1, '#13234a');
+    g.fillStyle = gr; g.fillRect(x * 64 + 2, y * 64 + 2, 60, 60);
+    g.strokeStyle = 'rgba(200,210,230,.35)'; g.lineWidth = 1;
+    for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x * 64 + 2, y * 64 + k * 16); g.lineTo(x * 64 + 62, y * 64 + k * 16); g.stroke(); }
+  }
+  _solar = new THREE.CanvasTexture(c); _solar.colorSpace = THREE.SRGBColorSpace; _solar.anisotropy = 8;
+  return _solar;
+}
+
 const matte = (hex, r = 0.6, m = 0) => new THREE.MeshStandardMaterial({ color: hex, roughness: r, metalness: m });
 const alu = () => matte(0xc9cdd0, 0.35, 0.7);
 const gummi = () => matte(0x1c1f21, 0.8);
@@ -252,7 +268,15 @@ export function baueAbdeckung(a, m, rand, o, farben) {
     }
     const sitz = new THREE.Mesh(new THREE.BoxGeometry(tiefe + 0.03, 0.04, laenge), kleid); sitz.position.set(bx, hohe - 0.02, 0); group.add(sitz);
     const schlitz = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, laenge - 0.18), matte(0x050505, 1)); schlitz.position.set(bx - tiefe / 2 - 0.004, 0.02, 0); group.add(schlitz); // Austritt der Lamellen
-    if (o.solar) { const solar = new THREE.Mesh(new THREE.BoxGeometry(tiefe * 0.6, 0.008, laenge * 0.5), matte(0x1d2a44, 0.25, 0.35)); solar.position.set(bx, hohe + 0.004, 0); group.add(solar); }
+    if (o.solar) { // kleines Modul, bündig in die Sitzfläche eingelassen, an einem Ende der Bank (nach den Datenblatt-Fotos)
+      const sm = a.solarmodul ?? { laenge_m: 0.42, tiefe_anteil: 0.62, abstand_ende_m: 0.12, rahmen_m: 0.012 };
+      const sl = sm.laenge_m, st = tiefe * sm.tiefe_anteil, z = -laenge / 2 + 0.07 + sm.abstand_ende_m + sl / 2;
+      const rahmen = new THREE.Mesh(new THREE.BoxGeometry(st + 2 * sm.rahmen_m, 0.006, sl + 2 * sm.rahmen_m), matte(0x2b2f33, 0.4, 0.6));
+      rahmen.position.set(bx, hohe + 0.0005, z);
+      const zellen = new THREE.Mesh(new THREE.PlaneGeometry(st, sl).rotateX(-Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: solarTextur(), roughness: 0.18, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 }));
+      zellen.position.set(bx, hohe + 0.0036, z);
+      group.add(rahmen, zellen);
+    }
     if (o.led) { const led = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.015, laenge - 0.2), new THREE.MeshStandardMaterial({ color: 0x9fe8ff, emissive: 0x9fe8ff, emissiveIntensity: 1.5 })); led.position.set(bx - tiefe / 2 - 0.006, hohe - 0.07, 0); group.add(led); }
     group.add(lamellen(-L / 2 + L * t, L / 2 - 0.02, span, lamHex, 0.025, solarLamelle));
   }

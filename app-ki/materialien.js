@@ -61,3 +61,36 @@ export function kaustikTextur() {
   _kaustik.wrapS = _kaustik.wrapT = THREE.RepeatWrapping; _kaustik.colorSpace = THREE.SRGBColorSpace; _kaustik.anisotropy = 8;
   return _kaustik;
 }
+
+/**
+ * Kontaktschatten: weicher, dunkler Saum außen um die Beckenkante (Licht wird am Übergang Stein/Boden
+ * verdeckt). Ring zwischen zwei Umrissen, innen deckend, außen ausgeblendet.
+ */
+export function kontaktSchatten(innen, aussen, staerke = 0.35) {
+  const n = innen.length, pos = [], farbe = [], ind = [];
+  for (let i = 0; i < n; i++) {
+    pos.push(innen[i].x, 0.004, innen[i].y, aussen[i].x, 0.004, aussen[i].y);
+    farbe.push(0, 0, 0, staerke, 0, 0, 0, 0);
+    const a = i * 2, b = ((i + 1) % n) * 2;
+    ind.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(farbe, 4));
+  geo.setIndex(ind);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  mesh.name = 'Kontaktschatten'; mesh.renderOrder = 1;
+  return mesh;
+}
+
+/** Lichtstimmung eines Fotos: Himmelsfarbe (oben), Bodenfarbe (unten), mittlere Helligkeit, Farbtemperatur. */
+export function fotoLicht(img) {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 48;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 64, 48);
+  const d = g.getImageData(0, 0, 64, 48).data;
+  const mittel = (y0, y1) => { let r = 0, gg = 0, b = 0, n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 64; x++) { const i = (y * 64 + x) * 4; r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; } return new THREE.Color(r / n / 255, gg / n / 255, b / n / 255); };
+  const himmel = mittel(0, 7), boden = mittel(34, 48), alles = mittel(0, 48);
+  const hell = 0.2126 * alles.r + 0.7152 * alles.g + 0.0722 * alles.b;
+  const waerme = THREE.MathUtils.clamp((alles.r - alles.b) / Math.max(alles.r + alles.b, 0.01), -0.4, 0.4); // >0 = warmes Licht
+  return { himmel, boden, hell, waerme };
+}

@@ -5,7 +5,7 @@
 //   sonst             einfacher, glatter Betonkörper
 import * as THREE from 'three';
 import { rauTextur } from './materialien.js';
-import { umrissPunkte, flaecheGeo, wandOrte, ledOrte } from './pool.js';
+import { umrissPunkte, flaecheGeo, wandOrte } from './pool.js';
 
 /** Dicke der Außenwand (m): so weit ragt der Körper über den Beckenrand hinaus. */
 export function koerperDicke(aufbau, off = 0.12) {
@@ -127,13 +127,13 @@ function ppTechnik(gruppe, m, a, technik) {
     const rohr = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, m.T * 0.55, 12), grau); rohr.position.set(q.x, -0.43 - m.T * 0.275, q.z); gruppe.add(rohr);
     const bogen = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), grau); bogen.position.set(q.x, -0.43, q.z); gruppe.add(bogen);
   }
-  for (const o of orte.duesen) {                        // Düsenanschlüsse außen
+  for (const o of technik.duesen ?? []) {               // Düsenanschlüsse außen (gleiche Lage wie innen)
     const p = aussen(o, tw + 0.05);
-    const d = drehen(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.1, 12).rotateX(Math.PI / 2), grau), o); d.position.set(p.x, -0.55, p.z); gruppe.add(d);
+    const d = drehen(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.1, 12).rotateX(Math.PI / 2), grau), o); d.position.set(p.x, o.y, p.z); gruppe.add(d);
   }
-  if (technik.led && technik.led.anzahl > 0) {          // Lampengehäuse außen: weiße Dosen mit Kabelrohr
-    for (const o of ledOrte(m, technik.led.seite, technik.led.lage, technik.led.anzahl)) {
-      const p = aussen(o, tw + 0.04), y = technik.ws - 0.6;
+  if (technik.led && technik.ledOrte?.length) {         // Lampengehäuse außen: weiße Dosen mit Kabelrohr
+    for (const o of technik.ledOrte) {
+      const p = aussen(o, tw + 0.04), y = technik.ws - (technik.ledTiefe ?? 0.6);
       const dose = drehen(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.07, 20).rotateX(Math.PI / 2), weiss), o); dose.position.set(p.x, y, p.z); gruppe.add(dose);
       const kabel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 8), weiss); kabel.position.set(p.x, y + 0.2, p.z); gruppe.add(kabel);
     }

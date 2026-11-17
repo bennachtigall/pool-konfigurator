@@ -135,27 +135,84 @@ function poolShader(mat, uniforms) {
 }
 
 /**
- * Baut das Gelände. Rückgabe: { gruppe, uniforms } – uniforms werden bei jeder Pool-Verschiebung aktualisiert.
- * aufloesung: Gitterpunkte entlang der Bildbreite.
+ * Verfeinert die Tiefenkarte an den Farbkanten des Fotos (kantenerhaltend): Jeder Bildpunkt übernimmt die
+ * Disparität des Nachbarn (5 × 5), dessen Farbe ihm am ähnlichsten ist – so liegen Tiefensprünge genau auf den
+ * Kanten von Hecken, Bäumen und Hauswänden statt verwaschen daneben.
  */
-export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300) {
-  const seitenverh = img.naturalWidth / img.naturalHeight;
-  const nx = aufloesung, ny = Math.max(2, Math.round(aufloesung / seitenverh));
+export function tiefeVerfeinern(t, img) {
+  const w = t.breite, h = t.hoehe;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h);
+  const px = g.getImageData(0, 0, w, h).data, d = t.daten, aus = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, r = px[i * 4], gg = px[i * 4 + 1], b = px[i * 4 + 2];
+    let summe = 0, gew = 0;
+    for (let dy = -2; dy <= 2; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue;
+      for (let dx = -2; dx <= 2; dx++) { const xx = x + dx; if (xx < 0 || xx >= w) continue;
+        const j = yy * w + xx, dc = Math.abs(px[j * 4] - r) + Math.abs(px[j * 4 + 1] - gg) + Math.abs(px[j * 4 + 2] - b);
+        const wgt = Math.exp(-dc / 18) * (dx === 0 && dy === 0 ? 1.5 : 1);
+        summe += d[j] * wgt; gew += wgt; } }
+    aus[i] = summe / gew;
+  }
+  return { ...t, daten: aus };
+}
+
+/**
+ * Hintergrund-Tiefe: Vordergrund „wegnehmen“ (Minimum-Filter auf die Disparität = weiter weg), nur waagerecht:
+ * Beim Umschauen werden Flächen seitlich hinter Bäumen, Hecken und Hauskanten frei; der Boden (in der Zeile
+ * gleich weit weg) bleibt dabei unverändert und wird nicht fälschlich als Vordergrund behandelt.
+ */
+function hintergrundTiefe(t, radius) {
+  const w = t.breite, h = t.hoehe, a = t.daten, aus = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = Infinity; for (let k = -radius; k <= radius; k++) { const xx = Math.min(w - 1, Math.max(0, x + k)); m = Math.min(m, a[y * w + xx]); } aus[y * w + x] = m; }
+  return { ...t, daten: aus };
+}
+
+/**
+ * Füllt im Foto die Stellen auf, an denen Vordergrund steht (Maske), mit Farben aus der Umgebung
+ * (mehrstufiges Verwischen von außen nach innen). Ergebnis dient als Textur der Hintergrundebene.
+ */
+function fotoAuffuellen(img, t, hg, schwelle) {
+  const w = Math.min(512, t.breite), h = Math.round((w * t.hoehe) / t.breite);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h);
+  const bild = g.getImageData(0, 0, w, h), px = bild.data, bekannt = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const u = x / (w - 1), v = y / (h - 1), tx = Math.round(u * (t.breite - 1)), ty = Math.round(v * (t.hoehe - 1)), j = ty * t.breite + tx;
+    bekannt[y * w + x] = t.daten[j] - hg.daten[j] < schwelle ? 1 : 0;
+  }
+  for (let runde = 0; runde < 60; runde++) { // von den Rändern der Lücke nach innen auffüllen
+    let offen = 0; const neu = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (bekannt[i]) continue;
+      let r = 0, gg = 0, b = 0, n = 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, -2]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const j = yy * w + xx; if (bekannt[j]) { r += px[j * 4]; gg += px[j * 4 + 1]; b += px[j * 4 + 2]; n++; } }
+      if (n) neu.push([i, r / n, gg / n, b / n]); else offen++;
+    }
+    for (const [i, r, gg, b] of neu) { px[i * 4] = r; px[i * 4 + 1] = gg; px[i * 4 + 2] = b; bekannt[i] = 1; }
+    if (!offen) break;
+  }
+  g.putImageData(bild, 0, 0);
+  return c;
+}
+
+/** Gitter-Geometrie aus Tiefe (gemeinsam für Vorder- und Hintergrundebene). */
+function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
   const pos = new Float32Array((nx + 1) * (ny + 1) * 3), uv = new Float32Array((nx + 1) * (ny + 1) * 2), zs = new Float32Array((nx + 1) * (ny + 1));
   const P = new THREE.Vector3();
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-    const u = i / nx, v = j / ny, idx = j * (nx + 1) + i;
-    const z = tiefeBei(t, k, p, u, v); zs[idx] = z;
+    const u = uVon + ((uBis - uVon) * i) / nx, v = j / ny, idx = j * (nx + 1) + i;
+    const z = tiefeBei(t, k, p, u, v) * abstandFaktor; zs[idx] = z;
     weltPunkt(k, p, u, v, z, P);
     pos.set([P.x, P.y, P.z], idx * 3); uv.set([u, 1 - v], idx * 2);
   }
-  // Dreiecke; an Tiefensprüngen auftrennen (außer am Boden, der flach in die Ferne läuft)
   const ind = [];
   const ok = (a, b, c) => {
+    if (!trennen) return true;
     const za = zs[a], zb = zs[b], zc = zs[c], hi = Math.max(za, zb, zc), lo = Math.min(za, zb, zc);
     if (hi >= p.ferne && lo < p.ferne) return false;                           // Übergang zum Hintergrund
     const boden = Math.abs(pos[a * 3 + 1]) < 0.3 && Math.abs(pos[b * 3 + 1]) < 0.3 && Math.abs(pos[c * 3 + 1]) < 0.3;
-    return boden || hi / lo < 1.2 + 0.004 * lo;
+    return boden || hi / lo < 1.12 + 0.003 * lo;
   };
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
@@ -166,19 +223,45 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(ind);
-  geo.computeVertexNormals();
+  return geo;
+}
 
-  const tex = new THREE.Texture(img); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true;
-  const uniforms = poolUniforms();
+/**
+ * Baut das Gelände eines Fotos: Vorderebene (Foto auf Tiefe, an Tiefensprüngen getrennt), Hintergrundebene
+ * (Vordergrund entfernt und aufgefüllt – füllt Lücken beim Umschauen) und Schattenschicht.
+ * opts: { yaw (°, Blickrichtung des Fotos), uVon, uBis (genutzter Bildausschnitt bei mehreren Fotos), uniforms }.
+ * Rückgabe: { gruppe, uniforms, texturen }.
+ */
+export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, opts = {}) {
+  const seitenverh = img.naturalWidth / img.naturalHeight, uVon = opts.uVon ?? 0, uBis = opts.uBis ?? 1;
+  const nx = Math.max(8, Math.round(aufloesung * (uBis - uVon))), ny = Math.max(2, Math.round(aufloesung / seitenverh));
+  const uniforms = opts.uniforms ?? poolUniforms();
+  const gruppe = new THREE.Group(), texturen = [];
+
+  // Vorderebene
+  const geo = gitter(t, k, p, nx, ny, uVon, uBis, true);
+  const tex = new THREE.Texture(img); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true; texturen.push(tex);
   const foto = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, side: THREE.DoubleSide });
   poolShader(foto, uniforms);
+  const vorn = new THREE.Mesh(geo, foto); vorn.name = 'KI_Gelaende'; vorn.renderOrder = -1;
   const schatten = new THREE.ShadowMaterial({ opacity: schattenStaerke, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   poolShader(schatten, uniforms);
-  const gruppe = new THREE.Group();
-  const m1 = new THREE.Mesh(geo, foto); m1.name = 'KI_Gelaende'; m1.renderOrder = -1;
-  const m2 = new THREE.Mesh(geo, schatten); m2.receiveShadow = true; m2.name = 'KI_Gelaende_Schatten';
-  gruppe.add(m1, m2);
-  return { gruppe, uniforms, textur: tex };
+  const schattenMesh = new THREE.Mesh(geo, schatten); schattenMesh.receiveShadow = true; schattenMesh.name = 'KI_Gelaende_Schatten';
+  gruppe.add(vorn, schattenMesh);
+
+  // Hintergrundebene: Vordergrund weggenommen, Foto dort aufgefüllt, etwas weiter hinten
+  if (opts.hintergrund !== false) {
+    const hg = hintergrundTiefe(t, Math.max(4, Math.round(t.breite / 60)));
+    const spanne = Math.max(1e-6, t.max - t.min);
+    const hgTex = new THREE.CanvasTexture(fotoAuffuellen(img, t, hg, 0.04 * spanne)); hgTex.colorSpace = THREE.SRGBColorSpace; texturen.push(hgTex);
+    const hgMat = new THREE.MeshBasicMaterial({ map: hgTex, toneMapped: false, side: THREE.DoubleSide });
+    poolShader(hgMat, uniforms);
+    const hinten = new THREE.Mesh(gitter(hg, k, p, Math.round(nx / 2), Math.round(ny / 2), uVon, uBis, false, 1.02), hgMat);
+    hinten.name = 'KI_Hintergrund'; hinten.renderOrder = -1.2;
+    gruppe.add(hinten);
+  }
+  gruppe.rotation.y = THREE.MathUtils.degToRad(-(opts.yaw ?? 0)); // Foto in seine Blickrichtung drehen (Kamera im Ursprung)
+  return { gruppe, uniforms, texturen };
 }
 
 /** Überträgt Lage und Größe des Pools in die Gelände-Shader. */

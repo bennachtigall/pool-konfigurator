@@ -3,17 +3,19 @@
 // Läuft komplett lokal: lädt nur ../daten/poolmaris-konfiguration.json und lib/three*.js.
 import * as THREE from 'three';
 import { OrbitControls } from './lib/OrbitControls.js';
-import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl } from './pool.js';
+import { buildPool, masse, umrissPunkte, flaecheGeo, skimmerAnzahl, duesenOrte, duesenAnzahl, einstiegsBelegung, ledOrte } from './pool.js';
 import { baueKoerper } from './koerper.js';
 import { baueUmgebungen } from './umgebung.js';
-import { wasserNormal } from './materialien.js';
+import { wasserNormal, kontaktSchatten, fotoLicht } from './materialien.js';
+import { ShaderPass } from './lib/postprocessing/ShaderPass.js';
 import { EffectComposer } from './lib/postprocessing/EffectComposer.js';
 import { RenderPass } from './lib/postprocessing/RenderPass.js';
 import { GTAOPass } from './lib/postprocessing/GTAOPass.js';
 import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
 import { tiefeSchaetzen } from './tiefe.js';
-import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand } from './gelaende.js';
+import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern } from './gelaende.js';
+import { exifLesen, bildwinkelAusF35 } from './exif.js';
 import { GARTEN_STANDARD, RICHTUNGEN, bilderHinzu, bildEntfernen, bildRichtung, gartenBilder, gartenUmgebung, gartenBoden, panoramaBauen } from './garten3d.js';
 import { GroundedSkybox } from './lib/GroundedSkybox.js';
 import { FOTO_STANDARD, fotoLaden, fotoBild, fotoRechteck, fotoKamera, fotoBoden, sonnenRichtung, fotoZusammensetzen } from './foto.js';
@@ -134,17 +136,26 @@ let qualitaet = 'hoch';
 /** Himmel/Studio/Foto, Spiegelungen und Lichtstärke je nach Umgebung und Qualität. */
 let gartenKuppel = null, gartenEnv = null;
 
-// ---------- KI-Garten: Zustand außerhalb der Konfiguration (Foto und Tiefe werden nie gespeichert) ----------
-const ki = { bild: null, url: null, tiefe: null, kalib: null, gelaende: null, schluessel: '', kuppel: null, env: null, envSchluessel: '', tex: null };
-const kiAktiv = () => zustand.umgebung === 'ki' && !!ki.tiefe;
-/** Rundum-Bild aus dem einen Foto: dient als Hintergrund jenseits des Geländes und als Spiegelungskarte. */
+// ---------- KI-Garten: Zustand außerhalb der Konfiguration (Fotos und Tiefe werden nie gespeichert) ----------
+// Mehrere Fotos vom selben Standpunkt in verschiedene Richtungen ergeben zusammen ein Rundum-Gelände.
+// Foto 1 ist das Hauptfoto (Startansicht); jedes weitere hat eine Blickrichtung (yaw, Grad, + = rechts).
+const ki = { bilder: [], schluessel: '', env: null, tex: null, envSchluessel: '', gelaende: [], uniforms: null, messen: null };
+const kiH = () => ki.bilder[0];
+const kiAktiv = () => zustand.umgebung === 'ki' && !!kiH()?.tiefe;
+const kiBildwinkel = (b) => b.exif?.f35 ? bildwinkelAusF35(b.exif.f35, b.bild.naturalWidth, b.bild.naturalHeight) : zustand.ki.bildwinkel;
+const kiParam = (b) => ({ ...zustand.ki, bildwinkel: kiBildwinkel(b) });
+function kiKalibrieren() { for (const b of ki.bilder) b.kalib = kalibrieren(b.tiefe, b.bild.naturalWidth / b.bild.naturalHeight, kiParam(b)); }
+
+/** Rundum-Bild aus allen Fotos: Hintergrund jenseits des Geländes und Spiegelungskarte. */
 function kiUmgebung() {
-  const p = zustand.ki, k = ki.kalib;
-  const s = [ki.url, p.bildwinkel, k.horizont.toFixed(3)].join('|');
+  const p = zustand.ki, h = kiH();
+  const s = [ki.bilder.map((b) => b.url + '@' + b.yaw).join(','), kiBildwinkel(h).toFixed(1), h.kalib.horizont.toFixed(3)].join('|');
   if (ki.envSchluessel !== s) {
     ki.tex?.dispose(); ki.env?.dispose();
-    const t = new THREE.CanvasTexture(panoramaBauen({ bildwinkel: p.bildwinkel, horizont: k.horizont }, [{ img: ki.bild, richtung: 0, panorama: false }]));
+    const liste = ki.bilder.map((b) => ({ img: b.bild, richtung: ((b.yaw % 360) + 360) % 360, panorama: false }));
+    const t = new THREE.CanvasTexture(panoramaBauen({ bildwinkel: kiBildwinkel(h), horizont: h.kalib.horizont, bodenFuellen: true }, liste));
     t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace;
+    t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; // sonst Himmelsfarbe am Kuppelboden (Pol der Kugel)
     const pm = new THREE.PMREMGenerator(renderer);
     ki.tex = t; ki.env = pm.fromEquirectangular(t).texture; pm.dispose();
     ki.envSchluessel = s;
@@ -154,42 +165,77 @@ function kiUmgebung() {
   kuppel.rotation.y = Math.PI; // Fotomitte nach vorn (Blickrichtung −z)
   return kuppel;
 }
-/** Gelände neu bauen, wenn sich Projektions-Einstellungen geändert haben. */
+
+/** Genutzter Bildausschnitt eines Fotos, damit sich benachbarte Fotos nicht überlagern (halber Winkelabstand). */
+function kiAusschnitt(b) {
+  if (ki.bilder.length < 2) return [0, 1];
+  const halb = kiBildwinkel(b) / 2;
+  let links = halb, rechts = halb;
+  for (const o of ki.bilder) if (o !== b) {
+    const d = ((o.yaw - b.yaw + 540) % 360) - 180;                     // Winkel zum Nachbarn (−180..180)
+    if (d > 0) rechts = Math.min(rechts, d / 2 + 1.5); else if (d < 0) links = Math.min(links, -d / 2 + 1.5);
+  }
+  const tanX = Math.tan(THREE.MathUtils.degToRad(halb)), u = (w) => 0.5 + Math.tan(THREE.MathUtils.degToRad(w)) / (2 * tanX);
+  return [Math.max(0, 1 - u(links)), Math.min(1, u(rechts))];
+}
+
+/** Gelände aller Fotos neu bauen, wenn sich Fotos oder Projektions-Einstellungen geändert haben. */
 function kiGelaende(m, off) {
   const p = zustand.ki;
-  ki.kalib = kalibrieren(ki.tiefe, ki.bild.naturalWidth / ki.bild.naturalHeight, p);
-  const s = [ki.url, p.hoehe, p.bildwinkel, p.horizontAuto, p.horizont, p.tiefe, p.schatten, QUALITAET[qualitaet].pixel].join('|');
+  const s = [ki.bilder.map((b) => b.url + '@' + b.yaw).join(','), p.hoehe, p.bildwinkel, p.horizontAuto, p.horizont, p.tiefe, p.schatten, qualitaet].join('|');
   if (ki.schluessel !== s) {
-    if (ki.gelaende) { scene.remove(ki.gelaende.gruppe); ki.gelaende.gruppe.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); ki.gelaende.textur.dispose(); }
-    ki.gelaende = gelaendeBauen(ki.bild, ki.tiefe, ki.kalib, p, p.schatten, qualitaet === 'niedrig' ? 180 : qualitaet === 'ultra' ? 420 : 300);
-    scene.add(ki.gelaende.gruppe);
+    for (const g of ki.gelaende) { scene.remove(g.gruppe); g.gruppe.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); g.texturen.forEach((t) => t.dispose()); }
+    ki.uniforms = null;
+    ki.gelaende = ki.bilder.map((b) => {
+      const [uVon, uBis] = kiAusschnitt(b);
+      const g = gelaendeBauen(b.bild, b.tiefe, b.kalib, kiParam(b), p.schatten, qualitaet === 'niedrig' ? 180 : qualitaet === 'ultra' ? 460 : 320,
+        { yaw: b.yaw, uVon, uBis, uniforms: ki.uniforms ?? undefined, hintergrund: qualitaet !== 'niedrig' });
+      ki.uniforms = g.uniforms; scene.add(g.gruppe); return g;
+    });
     ki.schluessel = s;
   }
-  ki.gelaende.gruppe.visible = true;
-  poolAussparung(ki.gelaende.uniforms, welt, m, off);
+  ki.gelaende.forEach((g) => { g.gruppe.visible = true; });
+  if (ki.uniforms) poolAussparung(ki.uniforms, welt, m, off);
 }
-/** Kamera genau auf den Standpunkt des Fotos setzen (Startansicht = Foto). */
+const kiGelaendeMeshes = () => ki.gelaende.flatMap((g) => g.gruppe.children.filter((o) => o.name === 'KI_Gelaende'));
+
 /** Horizontlinie über dem Bild anzeigen (hilft beim Einstellen von Hand). */
 function kiHorizontLinie() {
-  const l = $('horizont-linie');
-  const zeigen = zustand.umgebung === 'ki' && ki.kalib && (!zustand.ki.horizontAuto || !ki.kalib.sicher) && kiInFotoansicht();
+  const l = $('horizont-linie'), h = kiH();
+  const zeigen = zustand.umgebung === 'ki' && h?.kalib && (!zustand.ki.horizontAuto || !h.kalib.sicher) && kiInFotoansicht() && kiFotoIndex === 0;
   l.hidden = !zeigen;
   if (!zeigen) return;
-  const r = canvas.getBoundingClientRect(), p = canvas.parentElement.getBoundingClientRect();
-  Object.assign(l.style, { left: (r.left - p.left) + 'px', width: r.width + 'px', top: (r.top - p.top + ki.kalib.horizont * r.height) + 'px' });
+  const r = canvas.getBoundingClientRect(), pr = canvas.parentElement.getBoundingClientRect();
+  Object.assign(l.style, { left: (r.left - pr.left) + 'px', width: r.width + 'px', top: (r.top - pr.top + h.kalib.horizont * r.height) + 'px' });
 }
-let kiFotoblick = false; // true, solange die Kamera auf dem Fotostandpunkt steht (bis der Nutzer selbst dreht)
+let kiFotoblick = false, kiFotoIndex = 0; // Kamera steht auf dem Fotostandpunkt (bis der Nutzer selbst dreht)
 controls.addEventListener('start', () => { kiFotoblick = false; kiHorizontLinie(); });
 function kiInFotoansicht() { return kiFotoblick; }
-function kiFotoansicht() {
-  if (!ki.kalib) return;
-  const p = zustand.ki, k = ki.kalib;
+/** Kamera genau auf den Standpunkt von Foto i setzen (Ansicht = Foto). */
+function kiFotoansicht(i = kiFotoIndex) {
+  const b = ki.bilder[i]; if (!b?.kalib) return;
+  kiFotoIndex = i;
+  const p = zustand.ki, k = b.kalib, yaw = THREE.MathUtils.degToRad(b.yaw);
   const dist = k.neigung < -0.03 ? Math.min(p.hoehe / Math.tan(-k.neigung), 40) : 25;
   camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(k.tanY));
   camera.position.set(0, p.hoehe, 0);
-  controls.target.set(0, 0, -dist);
+  controls.target.set(Math.sin(yaw) * dist, 0, -Math.cos(yaw) * dist);
   camera.lookAt(controls.target);
-  controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; rendern(); kiHorizontLinie();
+  // Umschauen begrenzen: um die Blickrichtung dieses Fotos herum (bei Rundum-Fotos frei)
+  const rundum = ki.bilder.length >= 3;
+  controls.minAzimuthAngle = rundum ? -Infinity : -yaw - 0.95; controls.maxAzimuthAngle = rundum ? Infinity : -yaw + 0.95;
+  controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie();
+}
+
+/** Maßstab nachmessen: zwei Punkte im Gelände anklicken, echte Länge eingeben → Kamerahöhe wird angepasst. */
+const messGruppe = new THREE.Group(); scene.add(messGruppe);
+function messAnzeigen() {
+  messGruppe.clear();
+  const pts = ki.messen?.punkte ?? [];
+  const kugel = new THREE.SphereGeometry(0.06, 16, 12), gelb = new THREE.MeshBasicMaterial({ color: 0xffd400, depthTest: false });
+  pts.forEach((pt) => { const k = new THREE.Mesh(kugel, gelb); k.position.copy(pt); k.renderOrder = 10; messGruppe.add(k); });
+  if (pts.length === 2) { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd400, depthTest: false })); l.renderOrder = 10; messGruppe.add(l); }
+  rendern();
 }
 
 function umgebungSetzen(modus) {
@@ -198,7 +244,7 @@ function umgebungSetzen(modus) {
   if (gartenKuppel) { hintergrund.remove(gartenKuppel); gartenKuppel.geometry.dispose(); gartenKuppel.material.dispose(); gartenKuppel = null; }
   gartenEnv = null;
   let garten = modus === 'garten3d' && daten ? gartenUmgebung(renderer, zustand.garten) : null;
-  if (modus === 'ki' && ki.tiefe && ki.kalib) garten = { kuppel: kiUmgebung(), env: ki.env };   // KI-Garten: gleiche Logik wie Kundengarten
+  if (modus === 'ki' && kiH()?.kalib) garten = { kuppel: kiUmgebung(), env: ki.env };   // KI-Garten: gleiche Logik wie Kundengarten
   if (garten) { gartenKuppel = garten.kuppel; gartenEnv = garten.env; hintergrund.add(gartenKuppel); }
   umg.sky.visible = modus === 'rasen' || ((modus === 'garten3d' || modus === 'ki') && !garten);
   scene.background = null;
@@ -207,6 +253,12 @@ function umgebungSetzen(modus) {
   scene.environment = q.env ? (frei ? umg.studioEnv : gartenEnv || umg.himmelEnv) : null;
   scene.environmentIntensity = frei ? 0.7 : garten ? 0.9 : 0.35;
   hemi.intensity = q.env ? 0.2 : 0.9;
+  hemi.color.set(0xdcecff); hemi.groundColor.set(0x6f8a4a); sonne.color.set(0xfff2dd);
+  if (modus === 'ki' && kiH()) { // Lichtstimmung des Hauptfotos übernehmen: Himmels-/Bodenfarbe, Farbtemperatur
+    const l = kiH().licht ?? (kiH().licht = fotoLicht(kiH().bild));
+    hemi.color.copy(l.himmel).lerp(new THREE.Color(1, 1, 1), 0.3); hemi.groundColor.copy(l.boden); hemi.intensity = q.env ? 0.45 : 1.0;
+    sonne.color.setRGB(1 + l.waerme * 0.25, 1, 1 - l.waerme * 0.35);
+  }
   const p = foto ? zustand.foto : modus === 'garten3d' ? zustand.garten : modus === 'ki' ? zustand.ki : null;
   const hell = p ? p.helligkeit : 1;
   sonne.intensity = (q.env ? 2.0 : 2.4) * hell;
@@ -235,7 +287,7 @@ function setzeQualitaet(name) {
 }
 
 // ---------- Nachbearbeitung: Umgebungsverdeckung (GTAO) + Kantenglättung (SMAA) + Farbausgabe ----------
-let composer = null, gtao = null;
+let composer = null, gtao = null, koernung = null;
 function composerHolen() {
   if (composer) return composer;
   composer = new EffectComposer(renderer);
@@ -248,13 +300,21 @@ function composerHolen() {
   composer.addPass(gtao);
   composer.addPass(new SMAAPass());
   composer.addPass(new OutputPass());
+  koernung = new ShaderPass({ // feines Bildrauschen wie bei einer Handykamera
+    uniforms: { tDiffuse: { value: null }, uZeit: { value: 0 }, uStaerke: { value: 0.035 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uZeit; uniform float uStaerke; varying vec2 vUv;
+      float rnd(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uZeit) * 43758.5453); }
+      void main() { vec4 c = texture2D(tDiffuse, vUv); float n = rnd(gl_FragCoord.xy) - 0.5; gl_FragColor = vec4(c.rgb + n * uStaerke, c.a); }`,
+  });
+  composer.addPass(koernung);
   return composer;
 }
 /** Ein Bild rendern: mit Nachbearbeitung (Hoch/Ultra) oder direkt. Im Foto-Modus direkt (transparenter Hintergrund). */
 function bildRendern() {
   const q = QUALITAET[qualitaet];
   if (q.post && zustand.umgebung !== 'foto') {
-    composerHolen(); gtao.enabled = zustand.umgebung !== 'ki';
+    composerHolen(); gtao.enabled = zustand.umgebung !== 'ki'; koernung.enabled = zustand.umgebung === 'ki' || zustand.umgebung === 'garten3d';
     const c = composerHolen(), pr = renderer.getPixelRatio(), s = renderer.getSize(new THREE.Vector2());
     c.setPixelRatio(pr); c.setSize(s.x, s.y);
     c.render();
@@ -279,8 +339,8 @@ function groesseAnpassen() {
     w = f.width; h = f.height;
     for (const e of [canvas, foto]) Object.assign(e.style, { position: 'absolute', left: f.left + 'px', top: f.top + 'px', width: w + 'px', height: h + 'px' });
     foto.hidden = false;
-  } else if (zustand.umgebung === 'ki' && ki.bild) { // KI-Garten: gleiches Seitenverhältnis wie das Foto (Startansicht = Foto)
-    const rv = ki.bild.naturalWidth / ki.bild.naturalHeight;
+  } else if (zustand.umgebung === 'ki' && kiH()) { // KI-Garten: gleiches Seitenverhältnis wie das Foto (Startansicht = Foto)
+    const fb = ki.bilder[kiFotoIndex] ?? kiH(), rv = fb.bild.naturalWidth / fb.bild.naturalHeight;
     w = r.width; h = w / rv; if (h > r.height) { h = r.height; w = h * rv; }
     w = Math.round(w); h = Math.round(h);
     Object.assign(canvas.style, { position: 'absolute', left: Math.round((r.width - w) / 2) + 'px', top: Math.round((r.height - h) / 2) + 'px', width: w + 'px', height: h + 'px' });
@@ -325,7 +385,7 @@ const zustand = {
 };
 let meldung = '';
 let meldungKorrektur = ''; // Hinweis, wenn beim Laden Auswahl korrigiert wurde
-const szene = { pool: null, rand: null, ue: null, ab: null, sockel: null, kappe: null }; // aktuell sichtbare Gruppen
+const szene = { pool: null, rand: null, ue: null, ab: null, sockel: null, kappe: null, kontakt: null }; // aktuell sichtbare Gruppen
 
 const VOLLE_BREITE = ['stufen_volle_breite', 'durchgehende_treppe', 'stufenanlage'];
 const poolDaten = () => daten.pools.find((p) => p.id === zustand.poolId);
@@ -431,7 +491,7 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
 
   ersetze('pool', buildPool({
-    realistisch: QUALITAET[qualitaet].real,
+    realistisch: QUALITAET[qualitaet].real, duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
     pool, groesse: g, wandHex, rauigkeit: istPP ? (zustand.oberflaeche === 'genarbt' ? 0.9 : 0.3) : 0.55,
     einstieg: zustand.einstieg, seite: zustand.seite, richtwerte: daten.treppen._richtwerte,
     einbauHex: daten.farben_3d.einbauteile.weiss.hex, mitRand: !zustand.umrandung,
@@ -446,25 +506,31 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
     const u = daten.umrandungen.find((x) => x.id === zustand.umrandung);
     ersetze('rand', baueUmrandung(pool, g, u, hexVon(zustand.umrandungFarbe)).group);
   } else ersetze('rand', null);
+  { // Kontaktschatten außen an der Beckenkante (nicht im freien Modell, dort gibt es keinen Boden)
+    const off = rand || 0.12, k = new THREE.Group();
+    if (zustand.umgebung !== 'frei') k.add(kontaktSchatten(umrissPunkte(m, off), umrissPunkte(m, off + 0.22), zustand.umgebung === 'rasen' ? 0.16 : 0.22));
+    ersetze('kontakt', k);
+  }
   const frei = zustand.umgebung === 'frei', foto = zustand.umgebung === 'foto';
   // Welt: im Foto-Modus an die gewählte Stelle verschieben und drehen, sonst im Ursprung
   if (foto) { welt.position.set(zustand.foto.x, 0, zustand.foto.z); welt.rotation.y = THREE.MathUtils.degToRad(zustand.foto.drehung); }
   else if (kiAktiv()) {
     const p = zustand.ki;
-    ki.kalib = kalibrieren(ki.tiefe, ki.bild.naturalWidth / ki.bild.naturalHeight, p);
-    if (p.z === null) p.z = -(Math.max(bodenAbstand(ki.kalib, p, 0.9), 1.5) + m.B / 2 + (rand || 0.12) + 0.4); // Start: vordere Beckenkante knapp über dem unteren Bildrand
+    kiKalibrieren();
+    if (p.z === null) p.z = -(Math.max(bodenAbstand(kiH().kalib, kiParam(kiH()), 0.9), 1.5) + m.B / 2 + (rand || 0.12) + 0.4); // Start: vordere Beckenkante knapp über dem unteren Bildrand
     welt.position.set(p.x, 0, p.z); welt.rotation.y = THREE.MathUtils.degToRad(p.drehung);
   }
   else { welt.position.set(0, 0, 0); welt.rotation.y = 0; }
-  if (kiAktiv()) kiGelaende(m, rand || 0.12); else if (ki.gelaende) ki.gelaende.gruppe.visible = false;
-  const technik = { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null }; // Technik außen am Körper
+  if (kiAktiv()) kiGelaende(m, rand || 0.12); else ki.gelaende.forEach((g) => { g.gruppe.visible = false; });
+  messGruppe.visible = kiAktiv();
+  const technik = technikAussen(pool, m, ws, led); // Technik außen am Körper (gleiche Lage wie innen)
   ersetze('sockel', frei ? baueKoerper(m, pool.aufbau, rand || 0.12, technik) : null);
   umgebungSetzen(zustand.umgebung);
   controls.enabled = !foto;
   controls.maxDistance = zustand.umgebung === 'garten3d' ? zustand.garten.radius * 0.55 : zustand.umgebung === 'ki' ? 45 : 45;
   // KI-Garten: Umschauen nur so weit, wie das eine Foto Informationen hat (seitlich ca. ±55°, nicht unter den Boden)
   const kiModus = zustand.umgebung === 'ki';
-  controls.minAzimuthAngle = kiModus ? -0.95 : -Infinity; controls.maxAzimuthAngle = kiModus ? 0.95 : Infinity;
+  if (!kiModus) { controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; }
   controls.minPolarAngle = kiModus ? 0.35 : 0; // im Garten innerhalb der Foto-Kuppel bleiben
   if (foto) fotoKamera(camera, zustand.foto);
   controls.maxPolarAngle = frei ? Math.PI - 0.05 : Math.PI / 2 - 0.03; // frei: auch von unten ansehbar
@@ -519,6 +585,16 @@ function kameraAufSchnitt() {
   if (zustand.schnitt === 'quer') { camera.position.set(lage + d * 0.8, d * 0.35, d * 0.45); controls.target.set(lage, -m.T / 2, 0); }
   else { camera.position.set(d * 0.45, d * 0.35, lage + d * 0.8); controls.target.set(0, -m.T / 2, lage); }
   controls.update(); rendern();
+}
+
+/** Lage von Skimmer, Düsen und Licht für die Technik außen am Becken (PP-Fertigbecken, GLB). */
+function technikAussen(pool, m, ws, led) {
+  const bel = einstiegsBelegung(m, zustand.einstieg, zustand.seite, daten.treppen._richtwerte), lr = daten.led_regel;
+  return {
+    skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws, led: !!led, ledTiefe: lr.unter_wasserspiegel_m,
+    duesen: duesenOrte(m, duesenAnzahl(pool, m, daten.einlaufduesen_regel), bel, daten.einlaufduesen_regel),
+    ledOrte: led ? ledOrte(m, zustand.ledSeite, zustand.ledLage, zustand.ledAnzahl, { xVon: -m.L / 2 + (m.form === 'oval' ? m.B / 2 : 0) + bel.tiefe + 0.3 }, lr.randabstand_m) : [],
+  };
 }
 
 const beckenText = (pool, x) => pool.form === 'rund' ? `Ø ${komma(x.durchmesser)} × ${komma(x.tiefe)} m`
@@ -701,7 +777,7 @@ function zeichnePanel() {
       neuBauen(vorher === 'foto' && v !== 'foto'); groesseAnpassen();
       if (v === 'foto' && !fotoBild()) $('foto-datei').click(); // gleich nach dem Foto fragen
       if (v === 'garten3d' && !gartenBilder().length) $('garten-dateien').click();
-      if (v === 'ki') { if (!ki.tiefe) $('ki-datei').click(); else kiFotoansicht(); }
+      if (v === 'ki') { if (!kiH()) $('ki-datei').click(); else kiFotoansicht(0); }
     }),
     zustand.umgebung === 'foto' ? fotoBedienung() : '',
     zustand.umgebung === 'garten3d' ? gartenBedienung() : '',
@@ -806,9 +882,14 @@ function bodenPunkt(e) {
   return strahl.ray.intersectPlane(bodenEbene, new THREE.Vector3());
 }
 canvas.addEventListener('pointerdown', (e) => {
-  if (zustand.umgebung === 'ki' && kiAktiv() && e.button === 0) { // im KI-Garten: Pool anfassen und verschieben
+  if (zustand.umgebung === 'ki' && kiAktiv() && e.button === 0) { // im KI-Garten: messen oder Pool anfassen und verschieben
     const r = canvas.getBoundingClientRect();
     strahl.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    if (ki.messen?.aktiv) {
+      const treffer = strahl.intersectObjects(kiGelaendeMeshes(), false)[0];
+      if (treffer) { const pts = ki.messen.punkte; if (pts.length >= 2) pts.length = 0; pts.push(treffer.point.clone()); messAnzeigen(); if (pts.length === 2) zeichnePanel(); }
+      e.stopImmediatePropagation(); return;
+    }
     const ziele = [szene.pool, szene.rand].filter(Boolean);
     if (!strahl.intersectObjects(ziele, true).length) return;
     const p = bodenPunkt(e); if (!p) return;
@@ -865,62 +946,111 @@ $('foto-datei').addEventListener('change', async (e) => {
 
 /** Bedienelemente des KI-Gartens. */
 function kiBedienung() {
-  const p = zustand.ki;
+  const p = zustand.ki, h = kiH();
   const r = (label, key, min, max, schritt, wert = p[key]) => regler(label, wert, min, max, schritt, (v, fertig) => { p[key] = v; neuBauen(false, fertig); });
-  const laden = el('button', { type: 'button', className: 'knopf', textContent: ki.bild ? 'Anderes Gartenfoto laden …' : 'Gartenfoto laden …' });
-  laden.addEventListener('click', () => $('ki-datei').click());
-  const ansicht = el('button', { type: 'button', className: 'knopf hell', textContent: 'Zurück zur Fotoansicht' });
-  ansicht.addEventListener('click', kiFotoansicht);
-  const zurueck = el('button', { type: 'button', className: 'knopf hell', textContent: 'Einstellungen zurücksetzen' });
-  zurueck.addEventListener('click', () => { zustand.ki = { ...KI_STANDARD }; neuBauen(true); });
-  const auto = schalter('Horizont automatisch erkennen', p.horizontAuto, (v) => { p.horizontAuto = v; if (!v && ki.kalib) p.horizont = +ki.kalib.horizont.toFixed(3); neuBauen(); });
+  const knopf = (text, fn, hell = false) => { const b = el('button', { type: 'button', className: 'knopf' + (hell ? ' hell' : ''), textContent: text }); b.addEventListener('click', fn); return b; };
+  const auto = schalter('Horizont automatisch erkennen', p.horizontAuto, (v) => { p.horizontAuto = v; if (!v && h?.kalib) p.horizont = +h.kalib.horizont.toFixed(3); neuBauen(); });
+  if (!h) return [
+    el('div', { className: 'knoepfe' }, knopf('Gartenfoto(s) laden …', () => $('ki-datei').click())),
+    hinweis('Ein Foto genügt: Querformat, aus Augenhöhe, mit dem Platz für den Pool und etwas Horizont. Für ein Rundum-Ergebnis vom selben Standpunkt weitere Fotos nach rechts, links und hinten aufnehmen (bis zu 4). Alles läuft lokal, ohne Internet.'),
+  ];
+  // Fotoliste: Vorschau, Blickrichtung, Ansicht, Entfernen
+  const liste = ki.bilder.map((b, i) => {
+    const vorschau = el('img', { src: b.url, alt: b.name, className: 'vorschau' });
+    const info = el('div', {}, el('span', { textContent: i === 0 ? 'Hauptfoto' : `Foto ${i + 1}` }),
+      el('span', { className: 'klein-info', textContent: b.exif?.f35 ? `${b.exif.f35} mm (KB) → ${komma(kiBildwinkel(b).toFixed(1))}°` : 'Bildwinkel: Regler' }));
+    if (i > 0) {
+      const rw = regler(`Blickrichtung Foto ${i + 1} (°)`, b.yaw, -180, 180, 1, (v, fertig) => { b.yaw = v; neuBauen(false, fertig); });
+      info.append(rw);
+    }
+    const knoepfe = el('div', { className: 'bild-knoepfe' }, knopf('Ansicht', () => kiFotoansicht(i), true), i > 0 ? knopf('Entfernen', () => { const [x] = ki.bilder.splice(i, 1); URL.revokeObjectURL(x.url); kiFotoIndex = 0; ki.schluessel = ''; neuBauen(); kiFotoansicht(0); }, true) : '');
+    return el('div', { className: 'bildzeile' }, vorschau, info, knoepfe);
+  });
+  const messen = ki.messen ?? (ki.messen = { aktiv: false, punkte: [] });
+  const gemessen = messen.punkte.length === 2 ? messen.punkte[0].distanceTo(messen.punkte[1]) : null;
+  const laengeFeld = el('input', { type: 'number', min: '0.1', step: '0.01', placeholder: 'z. B. 0,60', id: 'mess-laenge' });
+  const messBlock = [
+    el('h3', { textContent: 'Maßstab nachmessen (empfohlen)' }),
+    hinweis('Zwei Punkte im Bild anklicken, deren echten Abstand du kennst – z. B. Kanten einer Terrassenplatte, Zaunfeld, Hauswandlänge. Danach die echte Länge eingeben: Der ganze Garten wird exakt darauf skaliert.'),
+    el('div', { className: 'knoepfe' }, knopf(messen.aktiv ? 'Messen beenden' : 'Zwei Punkte anklicken', () => { messen.aktiv = !messen.aktiv; if (messen.aktiv) messen.punkte.length = 0; messAnzeigen(); zeichnePanel(); }, !messen.aktiv)),
+    gemessen ? [hinweis(`Gemessen: ${komma(gemessen.toFixed(2))} m`), el('label', { htmlFor: 'mess-laenge', textContent: 'Echte Länge (m)' }), laengeFeld,
+      el('div', { className: 'knoepfe' }, knopf('Maßstab übernehmen', () => {
+        const echt = parseFloat(String(laengeFeld.value).replace(',', '.'));
+        if (!(echt > 0)) { zeigeMeldung('Bitte eine echte Länge in Metern eingeben.'); return; }
+        const f = echt / gemessen;
+        p.hoehe = THREE.MathUtils.clamp(p.hoehe * f, 0.3, 12);   // Maßstab des ganzen Geländes ist proportional zur Kamerahöhe
+        p.z = p.z !== null ? p.z * f : null; p.x *= f;
+        messen.punkte.forEach((pt) => pt.multiplyScalar(f)); messen.aktiv = false;
+        neuBauen(); messAnzeigen(); kiFotoansicht(kiFotoIndex);
+        zeigeMeldung(`Maßstab übernommen: Faktor ${komma(f.toFixed(3))}, Kamerahöhe jetzt ${komma(p.hoehe.toFixed(2))} m.`);
+      }))] : (messen.aktiv ? hinweis(messen.punkte.length ? 'Jetzt den zweiten Punkt anklicken.' : 'Ersten Punkt im Bild anklicken.') : ''),
+  ];
   return [
-    el('div', { className: 'knoepfe' }, laden),
-    hinweis(ki.bild
-      ? `Die KI hat die Tiefe des Fotos lokal berechnet${ki.tiefe ? ` (${(ki.tiefe.ms / 1000).toFixed(1).replace('.', ',')} s)` : ''}. Das Foto bleibt nur auf diesem Rechner.`
-      : 'Ein Foto genügt: Querformat, aus Augenhöhe, mit dem Platz für den Pool und etwas Horizont. Die KI schätzt daraus das Gelände in 3D (lokal, ohne Internet).'),
-    ki.bild ? [
-      el('div', { className: 'knoepfe' }, ansicht),
-      hinweis('Bedienung: Ziehen = umschauen, Mausrad = zoomen. Den Pool direkt anfassen und verschieben, Umschalt + Mausrad dreht ihn.'),
-      el('h3', { textContent: 'Pool im Garten' }),
-      r('Drehung des Pools (°)', 'drehung', -180, 180, 1),
-      r('Seitlich (m)', 'x', -30, 30, 0.1),
-      r('Entfernung (m)', 'z', -60, 0, 0.1, p.z ?? -8),
-      el('h3', { textContent: 'Foto vermessen' }),
-      r('Kamerahöhe beim Fotografieren (m)', 'hoehe', 0.5, 6, 0.05),
-      r('Bildwinkel des Fotos (°)', 'bildwinkel', 35, 100, 1),
-      auto,
-      p.horizontAuto ? hinweis(ki.kalib?.sicher ? `Erkannter Horizont: ${Math.round(ki.kalib.horizont * 100)} % von oben (Boden sicher erkannt).` : 'Boden im Foto nicht sicher erkannt – Horizont geschätzt. Bitte „automatisch“ ausschalten und den Horizont von Hand einstellen.') : r('Horizont im Foto (oben → unten)', 'horizont', 0.05, 0.95, 0.005),
-      r('Entfernungen strecken', 'tiefe', 0.5, 2, 0.02),
-      hinweis('Tipp: Stimmt der Maßstab nicht (Pool wirkt zu groß/klein), zuerst die Kamerahöhe, dann „Entfernungen strecken“ anpassen.'),
-      el('h3', { textContent: 'Licht passend zum Foto' }),
-      r('Sonnenrichtung (°)', 'sonneRichtung', 0, 360, 1),
-      r('Sonnenhöhe (°)', 'sonneHoehe', 5, 85, 1),
-      r('Helligkeit', 'helligkeit', 0.4, 1.6, 0.02),
-      r('Schattenstärke', 'schatten', 0, 0.9, 0.02),
-      el('div', { className: 'knoepfe' }, zurueck),
-      hinweis('Grenze: Ein Foto zeigt nur die Vorderseite der Dinge. Je weiter man sich vom Fotostandpunkt wegdreht, desto mehr gestreckte Stellen erscheinen hinter Bäumen oder Hausecken.'),
-    ] : '',
+    el('div', { className: 'knoepfe' }, knopf(ki.bilder.length < 4 ? 'Weiteres Foto hinzufügen …' : 'Maximal 4 Fotos', () => { if (ki.bilder.length < 4) $('ki-datei-weitere').click(); }),
+      knopf('Neu beginnen (anderes Hauptfoto) …', () => $('ki-datei').click(), true)),
+    ...liste,
+    hinweis(`Tiefe lokal berechnet (${ki.bilder.map((b) => komma((b.tiefe.ms / 1000).toFixed(1)) + ' s').join(', ')}). Die Fotos bleiben nur auf diesem Rechner.`),
+    hinweis('Bedienung: Ziehen = umschauen, Mausrad = zoomen. Den Pool direkt anfassen und verschieben, Umschalt + Mausrad dreht ihn.'),
+    el('h3', { textContent: 'Pool im Garten' }),
+    r('Drehung des Pools (°)', 'drehung', -180, 180, 1),
+    r('Seitlich (m)', 'x', -30, 30, 0.1),
+    r('Entfernung (m)', 'z', -60, 0, 0.1, p.z ?? -8),
+    ...messBlock,
+    el('h3', { textContent: 'Foto vermessen' }),
+    r('Kamerahöhe beim Fotografieren (m)', 'hoehe', 0.3, 12, 0.01),
+    h.exif?.f35 ? hinweis(`Bildwinkel aus den Fotodaten: ${komma(kiBildwinkel(h).toFixed(1))}° (${h.exif.f35} mm Kleinbild${h.exif.modell ? ', ' + h.exif.modell : ''}).`) : r('Bildwinkel des Fotos (°)', 'bildwinkel', 35, 100, 0.5),
+    auto,
+    p.horizontAuto ? hinweis(h.kalib?.sicher ? `Erkannter Horizont: ${Math.round(h.kalib.horizont * 100)} % von oben (Boden sicher erkannt).` : 'Boden im Foto nicht sicher erkannt – Horizont geschätzt. Bitte „automatisch“ ausschalten und den Horizont von Hand einstellen.') : r('Horizont im Foto (oben → unten)', 'horizont', 0.05, 0.95, 0.005),
+    r('Entfernungen strecken', 'tiefe', 0.5, 2, 0.02),
+    el('h3', { textContent: 'Licht passend zum Foto' }),
+    r('Sonnenrichtung (°)', 'sonneRichtung', 0, 360, 1),
+    r('Sonnenhöhe (°)', 'sonneHoehe', 5, 85, 1),
+    r('Helligkeit', 'helligkeit', 0.4, 1.6, 0.02),
+    r('Schattenstärke', 'schatten', 0, 0.9, 0.02),
+    el('div', { className: 'knoepfe' }, knopf('Zur Ansicht des Hauptfotos', () => kiFotoansicht(0), true), knopf('Einstellungen zurücksetzen', () => { zustand.ki = { ...KI_STANDARD }; neuBauen(true); }, true)),
+    hinweis('Grenze: Fotos zeigen nur die Vorderseite der Dinge. Weit weggedreht erscheinen hinter Bäumen oder Hausecken aufgefüllte oder gestreckte Stellen. Mehr Fotos vom selben Standpunkt verbessern das Rundum-Ergebnis.'),
   ];
 }
-$('ki-datei').addEventListener('change', async (e) => {
-  const d = e.target.files[0]; e.target.value = '';
-  if (!d) return;
-  if (!d.type.startsWith('image/')) { zeigeMeldung('Die Datei ist kein Bild.'); return; }
+
+/** Ein Foto laden, Tiefe berechnen (+ an Kanten verfeinern), EXIF-Brennweite lesen. */
+async function kiFotoVerarbeiten(d, nummer) {
+  if (!d.type.startsWith('image/')) throw new Error(`„${d.name}“ ist kein Bild.`);
   const url = URL.createObjectURL(d);
   try {
-    const img = await new Promise((ok, f) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => f(new Error('Das Bild konnte nicht geöffnet werden.')); i.src = url; });
-    zeigeMeldung('Foto geladen. Die KI berechnet jetzt die Tiefe (lokal, kann einige Sekunden dauern) …');
-    const tiefe = await tiefeSchaetzen(img, zeigeMeldung);
-    if (ki.url) URL.revokeObjectURL(ki.url);
-    Object.assign(ki, { bild: img, url, tiefe, schluessel: '', envSchluessel: '' });
+    const img = await new Promise((ok, f) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => f(new Error(`„${d.name}“ konnte nicht geöffnet werden.`)); i.src = url; });
+    const exif = await exifLesen(d);
+    zeigeMeldung(`Foto ${nummer}: Die KI berechnet die Tiefe (lokal, einige Sekunden) …`);
+    const roh = await tiefeSchaetzen(img, (t) => zeigeMeldung(`Foto ${nummer}: ${t}`));
+    const tiefe = { ...tiefeVerfeinern(roh, img), ms: roh.ms };
+    return { bild: img, url, name: d.name, exif, tiefe, yaw: 0, kalib: null };
+  } catch (err) { URL.revokeObjectURL(url); throw err; }
+}
+$('ki-datei').addEventListener('change', async (e) => { // neu beginnen: erstes Foto = Hauptfoto, weitere ausgewählte Fotos folgen
+  const dateien = [...e.target.files].slice(0, 4); e.target.value = '';
+  if (!dateien.length) return;
+  try {
+    const neu = [];
+    for (let i = 0; i < dateien.length; i++) neu.push(await kiFotoVerarbeiten(dateien[i], i + 1));
+    ki.bilder.forEach((b) => URL.revokeObjectURL(b.url));
+    neu.forEach((b, i) => { b.yaw = [0, 90, -90, 180][i]; });
+    ki.bilder = neu; ki.schluessel = ''; ki.envSchluessel = ''; ki.messen = null; messAnzeigen(); kiFotoIndex = 0;
     zustand.umgebung = 'ki'; zustand.ki.z = null; zustand.ki.x = 0; zustand.schnitt = 'aus';
-    groesseAnpassen(); neuBauen(true); groesseAnpassen(); kiFotoansicht();
-    zeigeMeldung(`3D-Garten erstellt (Tiefe in ${(tiefe.ms / 1000).toFixed(1).replace('.', ',')} s berechnet). Pool anfassen und verschieben, mit der Maus umschauen.`);
-  } catch (err) {
-    URL.revokeObjectURL(url); console.error(err);
-    zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err));
-  }
+    neuBauen(true); kiFotoansicht(0);
+    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ' (Bildwinkel aus den Fotodaten)' : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
+  } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
+});
+$('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto vom selben Standpunkt hinzufügen
+  const dateien = [...e.target.files].slice(0, 4 - ki.bilder.length); e.target.value = '';
+  try {
+    for (const d of dateien) {
+      const b = await kiFotoVerarbeiten(d, ki.bilder.length + 1);
+      const belegt = ki.bilder.map((x) => x.yaw);
+      b.yaw = [90, -90, 180, 45, -45].find((w) => !belegt.includes(w)) ?? 0;
+      ki.bilder.push(b);
+    }
+    ki.schluessel = ''; neuBauen(); kiFotoansicht(ki.bilder.length - 1);
+    zeigeMeldung('Foto hinzugefügt. Mit „Blickrichtung“ so drehen, dass die Übergänge zum Hauptfoto passen.');
+  } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 
 /** Bedienelemente der gewählten Abdeckung (aus der JSON-Datei). */
@@ -983,7 +1113,7 @@ async function glbSpeichern() {
     const pool = poolDaten(), m = masse(pool, pool.groessen[zustand.groesseIdx]);
     const rand = zustand.umrandung ? steinMasse(daten.umrandungen.find((x) => x.id === zustand.umrandung)).b : 0.12;
     const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
-    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand, { skimmerAnzahl: skimmerAnzahl(m, daten.skimmer_regel), ws: -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100, led: led ? { seite: zustand.ledSeite, lage: zustand.ledLage, anzahl: zustand.ledAnzahl } : null });
+    const koerper = szene.sockel || baueKoerper(m, pool.aufbau, rand, technikAussen(pool, m, -(zustand.premiumSkimmer ? daten.zubehoer.premium_skimmer.wasserstand_unter_kante_cm : daten.zubehoer.standard_skimmer.wasserstand_unter_kante_cm) / 100, led));
     const teile = [szene.pool, szene.rand, szene.ue, szene.ab, koerper].filter(Boolean);
     speichereDatei(dateiname(zustand.poolId, 'glb'), await exportiereGLB(teile));
     if (!szene.sockel) leereGruppe(koerper);
@@ -1028,6 +1158,7 @@ function sammleAuswahl() {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
   A('Zubehör', [['Beleuchtung', led ? `${led.name}, ${zustand.ledAnzahl} Stück, ${ledSeiten(pool).find((x) => x.wert === zustand.ledSeite).text}` : 'Ohne LED'],
     ['Skimmer', `${skimmerAnzahl(m, daten.skimmer_regel)} × ` + (zustand.premiumSkimmer ? `poolmaris Premium Skimmer, Einschub/Deckel ${name(zustand.skimmerFarbe)}` : 'Standard-Skimmer (im Set)')],
+    ['Einlaufdüsen', `${duesenAnzahl(pool, m, daten.einlaufduesen_regel)} Stück, gegenüber dem Skimmer`],
     ['Im Set enthalten', (pool.im_set_enthalten || []).join(', ')]]);
 
   const ueGew = daten.ueberdachungen.find((u) => u.id === zustand.ueberdachung);
