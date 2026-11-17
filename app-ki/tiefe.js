@@ -47,7 +47,7 @@ export async function tiefeSchaetzen(img, fortschritt) {
   const eingabe = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) eingabe[k * n + i] = (px[i * 4 + k] / 255 - MITTEL[k]) / STREUUNG[k];
   // Rechnen erst im nächsten Bild starten, damit die Fortschrittsanzeige sichtbar wird
-  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  await new Promise((r) => setTimeout(r, 30)); // kein requestAnimationFrame: würde in einem Hintergrund-Tab nie auslösen
   const t0 = performance.now();
   const ergebnis = await s.run({ [s.inputNames[0]]: new ort.Tensor('float32', eingabe, [1, 3, h, w]) });
   const aus = ergebnis[s.outputNames[0]];

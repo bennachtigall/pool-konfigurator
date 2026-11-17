@@ -120,3 +120,6 @@ main { background: #2b2f33; }
 .bild-knoepfe { display: flex; flex-direction: column; gap: 4px; }
 .bild-knoepfe .knopf { padding: 5px 8px; font-size: 12px; }
 input[type="number"] { width: 100%; padding: 8px; font-size: 15px; border: 1px solid var(--rand); border-radius: 6px; }
+
+/* KI-Garten: Lageplan */
+.lageplan { width: 100%; height: auto; margin-top: 6px; border: 1px solid var(--rand); border-radius: 6px; touch-action: none; cursor: grab; }

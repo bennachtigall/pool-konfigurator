@@ -39,33 +39,50 @@ export function kalibrieren(t, seitenverh, p) {
   const tanX = Math.tan(THREE.MathUtils.degToRad(p.bildwinkel / 2)), tanY = tanX / seitenverh;
   // Disparität „unendlich weit“: sehr kleiner Wert im Bild (Himmel, Ferne)
   const dUnendlich = perzentil(t.daten, 0.01);
-  // Bodenerkennung (robust, RANSAC): Auf einer ebenen Bodenfläche ist die Disparität linear in der Bildzeile und
-  // unabhängig von der Spalte: d = α·b + β (b = Bildhöhe, α < 0: weiter unten = näher). Senkrechte Flächen
-  // (Wände, Beckenwände, Hecken) haben in der Zeile kaum Gefälle und werden so aussortiert.
+  // Bodenerkennung (robust, RANSAC): Auf einer ebenen Bodenfläche ist die Disparität linear in den Bildkoordinaten:
+  // d = α·b + γ·a + β (b = Bildhöhe, a = Bildbreite; α < 0: weiter unten = näher). γ ≠ 0 bedeutet, dass das Foto
+  // seitlich gekippt ist (Horizont schräg). Senkrechte Flächen (Wände, Hecken) haben kaum Gefälle und fallen heraus.
   const alle = [];
-  for (let v = 0.45; v <= 0.985; v += 0.0125) for (let u = 0.06; u <= 0.94; u += 0.025) alle.push([u, v, abtasten(t, u, v), (1 - 2 * v) * tanY]);
+  for (let v = 0.45; v <= 0.985; v += 0.0125) for (let u = 0.04; u <= 0.96; u += 0.024) alle.push([u, v, abtasten(t, u, v), (1 - 2 * v) * tanY, (2 * u - 1) * tanX]);
   const spanne = Math.max(1e-6, t.max - t.min), tol = 0.025 * spanne;
   let besteN = 0, beste = null;
   let zufall = 12345; const rnd = () => ((zufall = (zufall * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); // reproduzierbar
-  for (let it = 0; it < 400; it++) {
-    const A = alle[(rnd() * alle.length) | 0], B = alle[(rnd() * alle.length) | 0];
-    if (Math.abs(A[3] - B[3]) < 0.08 * tanY) continue;
-    const al = (A[2] - B[2]) / (A[3] - B[3]); if (!(al < -0.4 * spanne)) continue;  // deutliches Gefälle nach oben = Boden
-    const be = A[2] - al * A[3];
+  const ebene3 = (A, B, C) => { // d = α b + γ a + β durch drei Punkte
+    const m = [[A[3], A[4], 1, A[2]], [B[3], B[4], 1, B[2]], [C[3], C[4], 1, C[2]]];
+    for (let i = 0; i < 3; i++) { let p = i; for (let k = i + 1; k < 3; k++) if (Math.abs(m[k][i]) > Math.abs(m[p][i])) p = k; [m[i], m[p]] = [m[p], m[i]]; if (Math.abs(m[i][i]) < 1e-9) return null;
+      for (let k = 0; k < 3; k++) if (k !== i) { const f = m[k][i] / m[i][i]; for (let j = i; j < 4; j++) m[k][j] -= f * m[i][j]; } }
+    return [m[0][3] / m[0][0], m[1][3] / m[1][1], m[2][3] / m[2][2]];
+  };
+  for (let it = 0; it < 600; it++) {
+    const e = ebene3(alle[(rnd() * alle.length) | 0], alle[(rnd() * alle.length) | 0], alle[(rnd() * alle.length) | 0]);
+    if (!e) continue;
+    const [al, ga] = e; if (!(al < -0.4 * spanne) || Math.abs(ga) > Math.abs(al) * 0.4) continue; // deutliches Gefälle, Kippung < ca. 22°
     let n = 0, unten = 0;
-    for (const q of alle) if (Math.abs(q[2] - (al * q[3] + be)) < tol) { n++; if (q[1] > 0.8) unten++; }
+    for (const q of alle) if (Math.abs(q[2] - (al * q[3] + ga * q[4] + e[2])) < tol) { n++; if (q[1] > 0.8) unten++; }
     const wert = n + unten * 0.5;                                                       // Boden liegt meist unten im Bild
-    if (wert > besteN) { besteN = wert; beste = [al, be]; }
+    if (wert > besteN) { besteN = wert; beste = e; }
   }
-  let proben = alle.filter((q) => beste && Math.abs(q[2] - (beste[0] * q[3] + beste[1])) < tol);
+  let proben = alle.filter((q) => beste && Math.abs(q[2] - (beste[0] * q[3] + beste[1] * q[4] + beste[2])) < tol);
   // Plausibilität: Boden muss breit genug sein und über einen größeren Bildbereich laufen
   const vs = proben.map((q) => q[1]), us = proben.map((q) => q[0]);
   let sicher = proben.length > alle.length * 0.12 && Math.max(...vs) - Math.min(...vs) > 0.15 && Math.max(...us) - Math.min(...us) > 0.4;
   if (!sicher) proben = alle.filter((q) => q[1] > 0.8 && q[0] > 0.2 && q[0] < 0.8);   // Notlösung: unterer Bildrand
+  // Kippung aus der Ebene: tan(roll) = −γ/α (Kleinste-Quadrate über die Bodenproben)
+  let roll = 0;
+  if (sicher && p.horizontAuto) {
+    let A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], y = [0, 0, 0];
+    for (const q of proben) { const r = [q[3], q[4], 1]; for (let i = 0; i < 3; i++) { y[i] += r[i] * q[2]; for (let j = 0; j < 3; j++) A[i][j] += r[i] * r[j]; } }
+    const det = (M) => M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    const D = det(A), ers = (k) => A.map((z, i) => z.map((w, j) => (j === k ? y[i] : w)));
+    if (Math.abs(D) > 1e-12) { const al = det(ers(0)) / D, ga = det(ers(1)) / D; roll = THREE.MathUtils.clamp(Math.atan(-ga / al), -0.35, 0.35); }
+  }
+  roll += THREE.MathUtils.degToRad(p.kippung ?? 0);                                    // Korrektur von Hand
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+  const bAuf = (q) => -q[4] * sr + q[3] * cr;                                         // Bildhöhe nach Ausgleich der Kippung
   let neigung;
   if (p.horizontAuto && sicher) {
     let sb = 0, sd = 0, sbb = 0, sbd = 0;
-    for (const [, , d, b] of proben) { sb += b; sd += d; sbb += b * b; sbd += b * d; }
+    for (const q of proben) { const b = bAuf(q), d = q[2]; sb += b; sd += d; sbb += b * b; sbd += b * d; }
     const n = proben.length, alpha = (n * sbd - sb * sd) / (n * sbb - sb * sb), beta = (sd - alpha * sb) / n;
     const bH = (dUnendlich - beta) / alpha;                                           // Bildhöhe des Horizonts
     neigung = -Math.atan(bH);
@@ -80,13 +97,13 @@ export function kalibrieren(t, seitenverh, p) {
   // Maßstab: echte inverse Tiefe des Bodens (aus Neigung + Kamerahöhe) gegen Disparität, Ursprung bei dUnendlich
   const c = Math.cos(neigung), sn = Math.sin(neigung);
   let zaehler = 0, nenner = 0;
-  for (const [, , d, b] of proben) {
-    const inv = -(b * c + sn) / p.hoehe;                    // 1 / planare Tiefe
+  for (const q of proben) {
+    const d = q[2], b = bAuf(q), inv = -(b * c + sn) / p.hoehe;                    // 1 / planare Tiefe
     if (inv <= 0) continue;
     const x = d - dUnendlich; zaehler += x * inv; nenner += x * x;
   }
   const s = nenner > 0 ? (zaehler / nenner) / p.tiefe : 0.01;
-  return { neigung, tanX, tanY, dUnendlich, s, horizont, sicher, bodenAnteil: proben.length / alle.length };
+  return { neigung, roll, tanX, tanY, dUnendlich, s, horizont, sicher, bodenAnteil: proben.length / alle.length };
 }
 
 /** Planare Tiefe (m) an Bildkoordinaten u, v. */
@@ -97,14 +114,15 @@ const tiefeBei = (t, k, p, u, v) => {
 
 /** Weltpunkt zu Bildkoordinaten u, v und planarer Tiefe z. Kamera bei (0, Höhe, 0), Blick nach −z. */
 function weltPunkt(k, p, u, v, z, ziel) {
-  const xc = (2 * u - 1) * k.tanX * z, yc = (1 - 2 * v) * k.tanY * z, zc = -z;
+  const a = (2 * u - 1) * k.tanX, b = (1 - 2 * v) * k.tanY, cr = Math.cos(k.roll ?? 0), sr = Math.sin(k.roll ?? 0);
+  const xc = (a * cr + b * sr) * z, yc = (-a * sr + b * cr) * z, zc = -z;            // Kippung ausgleichen
   const c = Math.cos(k.neigung), s = Math.sin(k.neigung);
   return ziel.set(xc, yc * c - zc * s + p.hoehe, yc * s + zc * c);
 }
 
 /** Abstand (m) des Bodenpunkts geradeaus in der Bildmitte unten – für die Startlage des Pools. */
 export function bodenAbstand(k, p, v = 0.8) {
-  const b = (1 - 2 * v) * k.tanY, inv = -(b * Math.cos(k.neigung) + Math.sin(k.neigung)) / p.hoehe;
+  const b = (1 - 2 * v) * k.tanY * Math.cos(k.roll ?? 0), inv = -(b * Math.cos(k.neigung) + Math.sin(k.neigung)) / p.hoehe;
   return inv > 0 ? 1 / inv : 10;
 }
 
@@ -112,13 +130,30 @@ export function bodenAbstand(k, p, v = 0.8) {
 const poolUniforms = () => ({
   uPoolInv: { value: new THREE.Matrix4() }, uHalb: { value: new THREE.Vector2(3, 2) }, uRadius: { value: 0 },
   uRand: { value: 1.2 }, uAktiv: { value: 0 },
+  // mehrere Fotos: Kamerastandorte (x, z, Blick-x, Blick-z) und halber Bildwinkel als Kosinus
+  uKams: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uKamCos: { value: [0, 0, 0, 0] }, uKamAnzahl: { value: 0 },
+  uKamHoehe: { value: 1.6 }, uBetrachter: { value: new THREE.Vector3() },
 });
+/** Uniforms eines Fotos: gemeinsame Werte (Pool, Kameras) plus eigene Nummer. */
+export const fotoUniforms = (gemeinsam, nr) => ({ ...gemeinsam, uIch: { value: nr } });
 function poolShader(mat, uniforms) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
     const kopf = `
       uniform mat4 uPoolInv; uniform vec2 uHalb; uniform float uRadius; uniform float uRand; uniform float uAktiv;
+      uniform vec4 uKams[4]; uniform float uKamCos[4]; uniform int uKamAnzahl; uniform int uIch;
+      uniform float uKamHoehe; uniform vec3 uBetrachter;
       varying vec3 vWelt;
+      // Welches Foto zeigt diesen Punkt am besten? Das, dessen Kamera ihn aus der ähnlichsten Richtung sieht wie der
+      // Betrachter gerade (blickabhängig). In der Fotoansicht ist das genau dieses Foto; beim Umschauen wechselt es.
+      int zustaendig(vec3 w) {
+        int best = -1; float bs = -2.0; vec3 zuBetr = normalize(uBetrachter - w);
+        for (int j = 0; j < 4; j++) { if (j >= uKamAnzahl) break;
+          vec2 d = w.xz - uKams[j].xy; float l = length(d);
+          if (l < 0.01 || dot(d / l, uKams[j].zw) < uKamCos[j]) continue;
+          float s = dot(normalize(vec3(uKams[j].x, uKamHoehe, uKams[j].y) - w), zuBetr);
+          if (s > bs) { bs = s; best = j; } }
+        return best; }
       float poolSdf(vec3 w) { vec2 q = (uPoolInv * vec4(w, 1.0)).xz; vec2 d = abs(q) - (uHalb - uRadius); return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - uRadius; }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + kopf)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -129,9 +164,9 @@ function poolShader(mat, uniforms) {
         }`)
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWelt = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + kopf)
-      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken');
+      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1) { int z = zustaendig(vWelt); if (z >= 0 && z != uIch) discard; } // anderes Foto zeigt diesen Punkt besser');
   };
-  mat.customProgramCacheKey = () => 'ki-gelaende';
+  mat.customProgramCacheKey = () => 'ki-gelaende-3';
 }
 
 /**
@@ -207,12 +242,20 @@ function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
     pos.set([P.x, P.y, P.z], idx * 3); uv.set([u, 1 - v], idx * 2);
   }
   const ind = [];
+  const A = new THREE.Vector3(), Bv = new THREE.Vector3(), C = new THREE.Vector3(), n = new THREE.Vector3(), blick = new THREE.Vector3();
   const ok = (a, b, c) => {
     if (!trennen) return true;
     const za = zs[a], zb = zs[b], zc = zs[c], hi = Math.max(za, zb, zc), lo = Math.min(za, zb, zc);
     if (hi >= p.ferne && lo < p.ferne) return false;                           // Übergang zum Hintergrund
     const boden = Math.abs(pos[a * 3 + 1]) < 0.3 && Math.abs(pos[b * 3 + 1]) < 0.3 && Math.abs(pos[c * 3 + 1]) < 0.3;
-    return boden || hi / lo < 1.12 + 0.003 * lo;
+    if (boden) return true;
+    if (hi >= p.ferne) return true;                                             // Himmel/Ferne als Kulisse behalten
+    // Fläche, die die Kamera nur streifend sieht (Normale fast quer zum Sehstrahl) = gestreckter „Vorhang“ an einer Kante
+    A.fromArray(pos, a * 3); Bv.fromArray(pos, b * 3); C.fromArray(pos, c * 3);
+    n.subVectors(Bv, A).cross(C.clone().sub(A)).normalize();
+    blick.set((A.x + Bv.x + C.x) / 3, (A.y + Bv.y + C.y) / 3 - p.hoehe, (A.z + Bv.z + C.z) / 3).normalize();
+    if (Math.abs(n.dot(blick)) < 0.14) return false;
+    return hi / lo < 1.12 + 0.003 * lo;
   };
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
@@ -235,7 +278,7 @@ function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
 export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, opts = {}) {
   const seitenverh = img.naturalWidth / img.naturalHeight, uVon = opts.uVon ?? 0, uBis = opts.uBis ?? 1;
   const nx = Math.max(8, Math.round(aufloesung * (uBis - uVon))), ny = Math.max(2, Math.round(aufloesung / seitenverh));
-  const uniforms = opts.uniforms ?? poolUniforms();
+  const gemeinsam = opts.uniforms ?? poolUniforms(), uniforms = fotoUniforms(gemeinsam, opts.nr ?? 0);
   const gruppe = new THREE.Group(), texturen = [];
 
   // Vorderebene
@@ -260,8 +303,9 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, o
     hinten.name = 'KI_Hintergrund'; hinten.renderOrder = -1.2;
     gruppe.add(hinten);
   }
-  gruppe.rotation.y = THREE.MathUtils.degToRad(-(opts.yaw ?? 0)); // Foto in seine Blickrichtung drehen (Kamera im Ursprung)
-  return { gruppe, uniforms, texturen };
+  gruppe.rotation.y = THREE.MathUtils.degToRad(-(opts.yaw ?? 0)); // Foto in seine Blickrichtung drehen
+  if (opts.pos) gruppe.position.set(opts.pos.x, 0, opts.pos.z);   // und an seinen Aufnahmestandort setzen
+  return { gruppe, uniforms: gemeinsam, texturen };
 }
 
 /** Überträgt Lage und Größe des Pools in die Gelände-Shader. */

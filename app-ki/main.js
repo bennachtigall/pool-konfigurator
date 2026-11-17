@@ -15,7 +15,7 @@ import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
 import { tiefeSchaetzen } from './tiefe.js';
 import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern } from './gelaende.js';
-import { exifLesen, bildwinkelAusF35 } from './exif.js';
+import { exifLesen, bildwinkelAusF35, gpsZuMeter, istHeic } from './exif.js';
 import { GARTEN_STANDARD, RICHTUNGEN, bilderHinzu, bildEntfernen, bildRichtung, gartenBilder, gartenUmgebung, gartenBoden, panoramaBauen } from './garten3d.js';
 import { GroundedSkybox } from './lib/GroundedSkybox.js';
 import { FOTO_STANDARD, fotoLaden, fotoBild, fotoRechteck, fotoKamera, fotoBoden, sonnenRichtung, fotoZusammensetzen } from './foto.js';
@@ -143,7 +143,7 @@ const ki = { bilder: [], schluessel: '', env: null, tex: null, envSchluessel: ''
 const kiH = () => ki.bilder[0];
 const kiAktiv = () => zustand.umgebung === 'ki' && !!kiH()?.tiefe;
 const kiBildwinkel = (b) => b.exif?.f35 ? bildwinkelAusF35(b.exif.f35, b.bild.naturalWidth, b.bild.naturalHeight) : zustand.ki.bildwinkel;
-const kiParam = (b) => ({ ...zustand.ki, bildwinkel: kiBildwinkel(b) });
+const kiParam = (b) => ({ ...zustand.ki, bildwinkel: kiBildwinkel(b), kippung: b.kippung ?? 0 });
 function kiKalibrieren() { for (const b of ki.bilder) b.kalib = kalibrieren(b.tiefe, b.bild.naturalWidth / b.bild.naturalHeight, kiParam(b)); }
 
 /** Rundum-Bild aus allen Fotos: Hintergrund jenseits des Geländes und Spiegelungskarte. */
@@ -166,36 +166,54 @@ function kiUmgebung() {
   return kuppel;
 }
 
-/** Genutzter Bildausschnitt eines Fotos, damit sich benachbarte Fotos nicht überlagern (halber Winkelabstand). */
-function kiAusschnitt(b) {
-  if (ki.bilder.length < 2) return [0, 1];
-  const halb = kiBildwinkel(b) / 2;
-  let links = halb, rechts = halb;
-  for (const o of ki.bilder) if (o !== b) {
-    const d = ((o.yaw - b.yaw + 540) % 360) - 180;                     // Winkel zum Nachbarn (−180..180)
-    if (d > 0) rechts = Math.min(rechts, d / 2 + 1.5); else if (d < 0) links = Math.min(links, -d / 2 + 1.5);
-  }
-  const tanX = Math.tan(THREE.MathUtils.degToRad(halb)), u = (w) => 0.5 + Math.tan(THREE.MathUtils.degToRad(w)) / (2 * tanX);
-  return [Math.max(0, 1 - u(links)), Math.min(1, u(rechts))];
-}
-
-/** Gelände aller Fotos neu bauen, wenn sich Fotos oder Projektions-Einstellungen geändert haben. */
+/** Gelände aller Fotos neu bauen, wenn sich Fotos oder Projektions-Einstellungen geändert haben.
+ *  Standort und Blickrichtung der Fotos ändern nur die Lage der Gruppen (schnell, z. B. beim Ziehen im Lageplan). */
 function kiGelaende(m, off) {
   const p = zustand.ki;
-  const s = [ki.bilder.map((b) => b.url + '@' + b.yaw).join(','), p.hoehe, p.bildwinkel, p.horizontAuto, p.horizont, p.tiefe, p.schatten, qualitaet].join('|');
+  const s = [ki.bilder.map((b) => b.url + '#' + (b.kippung ?? 0)).join(','), p.hoehe, p.bildwinkel, p.horizontAuto, p.horizont, p.tiefe, p.schatten, qualitaet].join('|');
   if (ki.schluessel !== s) {
     for (const g of ki.gelaende) { scene.remove(g.gruppe); g.gruppe.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); g.texturen.forEach((t) => t.dispose()); }
     ki.uniforms = null;
-    ki.gelaende = ki.bilder.map((b) => {
-      const [uVon, uBis] = kiAusschnitt(b);
+    ki.gelaende = ki.bilder.map((b, nr) => {
       const g = gelaendeBauen(b.bild, b.tiefe, b.kalib, kiParam(b), p.schatten, qualitaet === 'niedrig' ? 180 : qualitaet === 'ultra' ? 460 : 320,
-        { yaw: b.yaw, uVon, uBis, uniforms: ki.uniforms ?? undefined, hintergrund: qualitaet !== 'niedrig' });
+        { nr, uniforms: ki.uniforms ?? undefined, hintergrund: qualitaet !== 'niedrig' });
       ki.uniforms = g.uniforms; scene.add(g.gruppe); return g;
     });
     ki.schluessel = s;
   }
-  ki.gelaende.forEach((g) => { g.gruppe.visible = true; });
+  kiLageAnwenden();
   if (ki.uniforms) poolAussparung(ki.uniforms, welt, m, off);
+}
+/** Standort/Blickrichtung aller Fotos auf das Gelände und die Zuständigkeits-Uniforms übertragen. */
+function kiLageAnwenden() {
+  ki.gelaende.forEach((g, i) => {
+    const b = ki.bilder[i]; if (!b) return;
+    g.gruppe.visible = true;
+    g.gruppe.position.set(b.pos.x, 0, b.pos.z);
+    g.gruppe.rotation.y = THREE.MathUtils.degToRad(-b.yaw);
+  });
+  const u = ki.uniforms; if (!u) return;
+  u.uKamAnzahl.value = ki.bilder.length; u.uKamHoehe.value = zustand.ki.hoehe;
+  ki.bilder.forEach((b, i) => {
+    const y = THREE.MathUtils.degToRad(b.yaw);
+    u.uKams.value[i].set(b.pos.x, b.pos.z, Math.sin(y), -Math.cos(y));
+    u.uKamCos.value[i] = Math.cos(THREE.MathUtils.degToRad(kiBildwinkel(b) / 2) * 0.97);
+  });
+}
+/** Lage der Fotos aus GPS und Kompass (iPhone): Hauptfoto im Ursprung, Blick nach −z; die anderen relativ dazu. */
+function kiLageAusFotodaten() {
+  const h = kiH(); if (!h) return false;
+  const mitGps = ki.bilder.every((b) => b.exif?.lat !== undefined && b.exif?.richtung !== undefined);
+  if (!mitGps) return false;
+  const h0 = h.exif.richtung;
+  for (const b of ki.bilder) {
+    const d = gpsZuMeter(b.exif.lat, b.exif.lon, h.exif.lat, h.exif.lon); // x = Ost, z = −Nord
+    const r = Math.hypot(d.x, d.z), peil = Math.atan2(d.x, -d.z) - THREE.MathUtils.degToRad(h0);
+    b.pos = { x: r * Math.sin(peil), z: -r * Math.cos(peil) };
+    b.yaw = ((b.exif.richtung - h0 + 540) % 360) - 180;
+    b.quelle = 'gps';
+  }
+  return true;
 }
 const kiGelaendeMeshes = () => ki.gelaende.flatMap((g) => g.gruppe.children.filter((o) => o.name === 'KI_Gelaende'));
 
@@ -218,11 +236,11 @@ function kiFotoansicht(i = kiFotoIndex) {
   const p = zustand.ki, k = b.kalib, yaw = THREE.MathUtils.degToRad(b.yaw);
   const dist = k.neigung < -0.03 ? Math.min(p.hoehe / Math.tan(-k.neigung), 40) : 25;
   camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(k.tanY));
-  camera.position.set(0, p.hoehe, 0);
-  controls.target.set(Math.sin(yaw) * dist, 0, -Math.cos(yaw) * dist);
+  camera.position.set(b.pos.x, p.hoehe, b.pos.z);
+  controls.target.set(b.pos.x + Math.sin(yaw) * dist, 0, b.pos.z - Math.cos(yaw) * dist);
   camera.lookAt(controls.target);
   // Umschauen begrenzen: um die Blickrichtung dieses Fotos herum (bei Rundum-Fotos frei)
-  const rundum = ki.bilder.length >= 3;
+  const rundum = ki.bilder.length >= 2;
   controls.minAzimuthAngle = rundum ? -Infinity : -yaw - 0.95; controls.maxAzimuthAngle = rundum ? Infinity : -yaw + 0.95;
   controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie();
 }
@@ -312,6 +330,7 @@ function composerHolen() {
 }
 /** Ein Bild rendern: mit Nachbearbeitung (Hoch/Ultra) oder direkt. Im Foto-Modus direkt (transparenter Hintergrund). */
 function bildRendern() {
+  if (ki.uniforms) ki.uniforms.uBetrachter.value.copy(camera.position); // blickabhängige Fotowahl im KI-Garten
   const q = QUALITAET[qualitaet];
   if (q.post && zustand.umgebung !== 'foto') {
     composerHolen(); gtao.enabled = zustand.umgebung !== 'ki'; koernung.enabled = zustand.umgebung === 'ki' || zustand.umgebung === 'garten3d';
@@ -363,7 +382,7 @@ renderer.setAnimationLoop((zeit) => {
     brauchtRender = true; letzterFrame = zeit;
   }
   if (zustand.umgebung !== 'foto' && controls.update()) brauchtRender = true;
-  if (brauchtRender) { bildRendern(); brauchtRender = false; }
+  if (brauchtRender) { if (ki.uniforms) ki.uniforms.uBetrachter.value.copy(camera.position); bildRendern(); brauchtRender = false; }
 });
 
 // ---------- Zustand ----------
@@ -944,6 +963,82 @@ $('foto-datei').addEventListener('change', async (e) => {
   } catch (err) { zeigeMeldung(err.message); }
 });
 
+/**
+ * Lageplan (Draufsicht): Standort und Blickrichtung jedes Fotos als Punkt mit Blickkegel, dazu der Pool.
+ * Punkt ziehen = Standort verschieben, Griff am Kegel ziehen = Blickrichtung drehen, Pool ziehen = Pool verschieben.
+ */
+const FOTO_FARBEN = ['#1f7fc4', '#e2730b', '#2a9d4b', '#b23a8f'];
+function lageplanBlock() {
+  const c = el('canvas', { className: 'lageplan', width: 560, height: 420 });
+  const anzeige = { mass: 1, mx: 0, mz: 0 };
+  const W = c.width, H = c.height;
+  const welt2bild = (x, z) => [W / 2 + (x - anzeige.mx) * anzeige.mass, H / 2 + (z - anzeige.mz) * anzeige.mass];
+  const bild2welt = (px, py) => [anzeige.mx + (px - W / 2) / anzeige.mass, anzeige.mz + (py - H / 2) / anzeige.mass];
+  const griff = (b) => { const y = THREE.MathUtils.degToRad(b.yaw), l = 5; return [b.pos.x + Math.sin(y) * l, b.pos.z - Math.cos(y) * l]; };
+  const zeichnen = () => {
+    const pts = ki.bilder.flatMap((b) => [[b.pos.x, b.pos.z], griff(b)]);
+    pts.push([zustand.ki.x, zustand.ki.z ?? -6]);
+    const xs = pts.map((q) => q[0]), zs = pts.map((q) => q[1]);
+    anzeige.mx = (Math.min(...xs) + Math.max(...xs)) / 2; anzeige.mz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    anzeige.mass = Math.min(W / (Math.max(...xs) - Math.min(...xs) + 8), H / (Math.max(...zs) - Math.min(...zs) + 8));
+    const g = c.getContext('2d'); g.clearRect(0, 0, W, H); g.fillStyle = '#eef3e8'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(0,0,0,.07)'; g.lineWidth = 1;                               // 1-m-Raster
+    const [x0, z0] = bild2welt(0, 0), [x1, z1] = bild2welt(W, H);
+    for (let x = Math.ceil(x0); x <= x1; x++) { const [px] = welt2bild(x, 0); g.beginPath(); g.moveTo(px, 0); g.lineTo(px, H); g.stroke(); }
+    for (let z = Math.ceil(z0); z <= z1; z++) { const [, py] = welt2bild(0, z); g.beginPath(); g.moveTo(0, py); g.lineTo(W, py); g.stroke(); }
+    // Pool
+    const pool = poolDaten(), m = masse(pool, pool.groessen[zustand.groesseIdx]), dr = THREE.MathUtils.degToRad(zustand.ki.drehung);
+    g.save(); const [ppx, ppy] = welt2bild(zustand.ki.x, zustand.ki.z ?? -6); g.translate(ppx, ppy); g.rotate(dr);
+    g.fillStyle = 'rgba(46,159,216,.75)'; g.strokeStyle = '#0e4f80'; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(-m.L / 2 * anzeige.mass, -m.B / 2 * anzeige.mass, m.L * anzeige.mass, m.B * anzeige.mass, m.form === 'rechteck' ? 2 : m.B / 2 * anzeige.mass); g.fill(); g.stroke(); g.restore();
+    // Fotos: Blickkegel, Standort, Griff
+    ki.bilder.forEach((b, i) => {
+      const [px, py] = welt2bild(b.pos.x, b.pos.z), y = THREE.MathUtils.degToRad(b.yaw), hw = THREE.MathUtils.degToRad(kiBildwinkel(b) / 2), l = 7 * anzeige.mass;
+      g.fillStyle = FOTO_FARBEN[i] + '33'; g.strokeStyle = FOTO_FARBEN[i]; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.sin(y - hw) * l, py - Math.cos(y - hw) * l); g.lineTo(px + Math.sin(y + hw) * l, py - Math.cos(y + hw) * l); g.closePath(); g.fill(); g.stroke();
+      const [gx, gy] = welt2bild(...griff(b));
+      g.beginPath(); g.moveTo(px, py); g.lineTo(gx, gy); g.stroke();
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(gx, gy, 6, 0, 7); g.fill(); g.stroke();             // Griff: Richtung
+      g.fillStyle = FOTO_FARBEN[i]; g.beginPath(); g.arc(px, py, 8, 0, 7); g.fill();                     // Standort
+      g.fillStyle = '#fff'; g.font = 'bold 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), px, py + 0.5);
+    });
+    g.fillStyle = '#5a6b77'; g.font = '11px system-ui'; g.textAlign = 'left'; g.fillText('1 Kästchen = 1 m', 8, H - 8);
+  };
+  let ziehen = null;
+  const punkt = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)]; };
+  c.addEventListener('pointerdown', (e) => {
+    const [px, py] = punkt(e), nah = (x, z, r) => { const [qx, qy] = welt2bild(x, z); return Math.hypot(qx - px, qy - py) < r; };
+    ki.bilder.forEach((b, i) => { if (!ziehen && nah(...griff(b), 10)) ziehen = { art: 'richtung', i }; });
+    ki.bilder.forEach((b, i) => { if (!ziehen && nah(b.pos.x, b.pos.z, 11)) ziehen = { art: 'standort', i }; });
+    if (!ziehen && nah(zustand.ki.x, zustand.ki.z ?? -6, 30)) ziehen = { art: 'pool' };
+    if (ziehen) { ziehen.fest = { ...anzeige }; c.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!ziehen) return;
+    Object.assign(anzeige, ziehen.fest);                                               // Maßstab beim Ziehen festhalten
+    const [x, z] = bild2welt(...punkt(e));
+    if (ziehen.art === 'pool') { zustand.ki.x = x; zustand.ki.z = z; }
+    else { const b = ki.bilder[ziehen.i];
+      if (ziehen.art === 'standort') b.pos = { x, z };
+      else b.yaw = THREE.MathUtils.radToDeg(Math.atan2(x - b.pos.x, -(z - b.pos.z)));
+      b.quelle = 'hand'; }
+    neuBauen(false, false); kiLageAnwenden();
+    const g = c.getContext('2d'); const alt = { ...anzeige }; zeichnen(); Object.assign(anzeige, alt);
+  });
+  const ende = () => { if (!ziehen) return; ziehen = null; ki.envSchluessel = ''; neuBauen(); };
+  c.addEventListener('pointerup', ende); c.addEventListener('pointercancel', ende);
+  zeichnen();
+  const gps = ki.bilder.every((b) => b.exif?.lat !== undefined && b.exif?.richtung !== undefined);
+  const zurueck = el('button', { type: 'button', className: 'knopf hell', textContent: 'Lage wieder aus GPS und Kompass', disabled: !gps });
+  zurueck.addEventListener('click', () => { kiLageAusFotodaten(); ki.envSchluessel = ''; neuBauen(); });
+  return [
+    el('h3', { textContent: 'Lageplan der Fotos' }),
+    hinweis(gps ? 'Standorte und Blickrichtungen kommen aus GPS und Kompass der Fotos (auf ca. 2–5 m bzw. 5–10° genau). Zum Feinjustieren: farbigen Punkt ziehen = Standort, weißen Griff ziehen = Blickrichtung, Pool ziehen = verschieben.'
+      : 'Die Fotos haben keine GPS-/Kompassdaten. Standort (farbiger Punkt) und Blickrichtung (weißer Griff) bitte so ziehen, wie die Fotos aufgenommen wurden.'),
+    c, el('div', { className: 'knoepfe' }, zurueck),
+  ];
+}
+
 /** Bedienelemente des KI-Gartens. */
 function kiBedienung() {
   const p = zustand.ki, h = kiH();
@@ -959,10 +1054,7 @@ function kiBedienung() {
     const vorschau = el('img', { src: b.url, alt: b.name, className: 'vorschau' });
     const info = el('div', {}, el('span', { textContent: i === 0 ? 'Hauptfoto' : `Foto ${i + 1}` }),
       el('span', { className: 'klein-info', textContent: b.exif?.f35 ? `${b.exif.f35} mm (KB) → ${komma(kiBildwinkel(b).toFixed(1))}°` : 'Bildwinkel: Regler' }));
-    if (i > 0) {
-      const rw = regler(`Blickrichtung Foto ${i + 1} (°)`, b.yaw, -180, 180, 1, (v, fertig) => { b.yaw = v; neuBauen(false, fertig); });
-      info.append(rw);
-    }
+    info.append(regler(`Kippung Foto ${i + 1} (°)`, b.kippung ?? 0, -15, 15, 0.5, (v, fertig) => { b.kippung = v; if (fertig) neuBauen(false, true); }));
     const knoepfe = el('div', { className: 'bild-knoepfe' }, knopf('Ansicht', () => kiFotoansicht(i), true), i > 0 ? knopf('Entfernen', () => { const [x] = ki.bilder.splice(i, 1); URL.revokeObjectURL(x.url); kiFotoIndex = 0; ki.schluessel = ''; neuBauen(); kiFotoansicht(0); }, true) : '');
     return el('div', { className: 'bildzeile' }, vorschau, info, knoepfe);
   });
@@ -989,6 +1081,7 @@ function kiBedienung() {
     el('div', { className: 'knoepfe' }, knopf(ki.bilder.length < 4 ? 'Weiteres Foto hinzufügen …' : 'Maximal 4 Fotos', () => { if (ki.bilder.length < 4) $('ki-datei-weitere').click(); }),
       knopf('Neu beginnen (anderes Hauptfoto) …', () => $('ki-datei').click(), true)),
     ...liste,
+    ki.bilder.length > 1 ? lageplanBlock() : '',
     hinweis(`Tiefe lokal berechnet (${ki.bilder.map((b) => komma((b.tiefe.ms / 1000).toFixed(1)) + ' s').join(', ')}). Die Fotos bleiben nur auf diesem Rechner.`),
     hinweis('Bedienung: Ziehen = umschauen, Mausrad = zoomen. Den Pool direkt anfassen und verschieben, Umschalt + Mausrad dreht ihn.'),
     el('h3', { textContent: 'Pool im Garten' }),
@@ -1012,17 +1105,29 @@ function kiBedienung() {
   ];
 }
 
-/** Ein Foto laden, Tiefe berechnen (+ an Kanten verfeinern), EXIF-Brennweite lesen. */
+/** Ein Foto laden (HEIC nur, wo der Browser es kann), auf max. 4096 px verkleinern, Tiefe berechnen, Aufnahmedaten lesen. */
 async function kiFotoVerarbeiten(d, nummer) {
-  if (!d.type.startsWith('image/')) throw new Error(`„${d.name}“ ist kein Bild.`);
-  const url = URL.createObjectURL(d);
+  if (!d.type.startsWith('image/') && !istHeic(d)) throw new Error(`„${d.name}“ ist kein Bild.`);
+  const roh = URL.createObjectURL(d);
+  let url = roh;
   try {
-    const img = await new Promise((ok, f) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => f(new Error(`„${d.name}“ konnte nicht geöffnet werden.`)); i.src = url; });
+    let img = await new Promise((ok, f) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => f(new Error(istHeic(d)
+      ? `„${d.name}“ ist ein HEIC-Foto (iPhone). Dieser Browser kann HEIC nicht öffnen – bitte Safari verwenden oder die Fotos als JPG speichern (iPhone: Einstellungen › Kamera › Formate › „Maximale Kompatibilität“).`
+      : `„${d.name}“ konnte nicht geöffnet werden.`)); i.src = roh; });
+    const max = 4096;
+    if (Math.max(img.naturalWidth, img.naturalHeight) > max) { // sehr große Handyfotos verkleinern (Grafikspeicher, Rechenzeit)
+      const f = max / Math.max(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * f); c.height = Math.round(img.naturalHeight * f);
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height);
+      url = URL.createObjectURL(await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.92)));
+      URL.revokeObjectURL(roh);
+      img = await new Promise((ok, f2) => { const i = new Image(); i.onload = () => ok(i); i.onerror = f2; i.src = url; });
+    }
     const exif = await exifLesen(d);
     zeigeMeldung(`Foto ${nummer}: Die KI berechnet die Tiefe (lokal, einige Sekunden) …`);
-    const roh = await tiefeSchaetzen(img, (t) => zeigeMeldung(`Foto ${nummer}: ${t}`));
-    const tiefe = { ...tiefeVerfeinern(roh, img), ms: roh.ms };
-    return { bild: img, url, name: d.name, exif, tiefe, yaw: 0, kalib: null };
+    const rohTiefe = await tiefeSchaetzen(img, (t) => zeigeMeldung(`Foto ${nummer}: ${t}`));
+    const tiefe = { ...tiefeVerfeinern(rohTiefe, img), ms: rohTiefe.ms };
+    return { bild: img, url, name: d.name, exif, tiefe, yaw: 0, pos: { x: 0, z: 0 }, kippung: 0, kalib: null };
   } catch (err) { URL.revokeObjectURL(url); throw err; }
 }
 $('ki-datei').addEventListener('change', async (e) => { // neu beginnen: erstes Foto = Hauptfoto, weitere ausgewählte Fotos folgen
@@ -1033,10 +1138,11 @@ $('ki-datei').addEventListener('change', async (e) => { // neu beginnen: erstes 
     for (let i = 0; i < dateien.length; i++) neu.push(await kiFotoVerarbeiten(dateien[i], i + 1));
     ki.bilder.forEach((b) => URL.revokeObjectURL(b.url));
     neu.forEach((b, i) => { b.yaw = [0, 90, -90, 180][i]; });
-    ki.bilder = neu; ki.schluessel = ''; ki.envSchluessel = ''; ki.messen = null; messAnzeigen(); kiFotoIndex = 0;
+    ki.bilder = neu;
+    const ausGps = kiLageAusFotodaten(); ki.schluessel = ''; ki.envSchluessel = ''; ki.messen = null; messAnzeigen(); kiFotoIndex = 0;
     zustand.umgebung = 'ki'; zustand.ki.z = null; zustand.ki.x = 0; zustand.schnitt = 'aus';
     neuBauen(true); kiFotoansicht(0);
-    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ' (Bildwinkel aus den Fotodaten)' : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
+    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ', Bildwinkel aus den Fotodaten' : ''}${neu.length > 1 ? (ausGps ? ', Lage aus GPS und Kompass' : ' – bitte die Lage im Lageplan einstellen') : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto vom selben Standpunkt hinzufügen
@@ -1048,8 +1154,9 @@ $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto
       b.yaw = [90, -90, 180, 45, -45].find((w) => !belegt.includes(w)) ?? 0;
       ki.bilder.push(b);
     }
+    kiLageAusFotodaten();
     ki.schluessel = ''; neuBauen(); kiFotoansicht(ki.bilder.length - 1);
-    zeigeMeldung('Foto hinzugefügt. Mit „Blickrichtung“ so drehen, dass die Übergänge zum Hauptfoto passen.');
+    zeigeMeldung(ki.bilder.every((b) => b.exif?.lat !== undefined) ? 'Foto hinzugefügt, Lage aus GPS und Kompass. Im Lageplan bei Bedarf nachschieben.' : 'Foto hinzugefügt. Im Lageplan Standort und Blickrichtung einstellen.');
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 
