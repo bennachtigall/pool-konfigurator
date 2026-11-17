@@ -138,7 +138,7 @@ const poolUniforms = () => ({
   uTiefe0: { value: null }, uTiefe1: { value: null }, uTiefe2: { value: null }, uTiefe3: { value: null },
 });
 /** Uniforms eines Fotos: gemeinsame Werte (Pool, Kameras) plus eigene Nummer. */
-export const fotoUniforms = (gemeinsam, nr) => ({ ...gemeinsam, uIch: { value: nr } });
+export const fotoUniforms = (gemeinsam, nr, hinten = false) => ({ ...gemeinsam, uIch: { value: nr }, uHinten: { value: hinten ? 1 : 0 } });
 function poolShader(mat, uniforms) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -150,34 +150,41 @@ function poolShader(mat, uniforms) {
       uniform sampler2D uTiefe0; uniform sampler2D uTiefe1; uniform sampler2D uTiefe2; uniform sampler2D uTiefe3;
       varying vec3 vWelt;   // Lage im Raum (rund um den Pool eingeebnet)
       varying vec3 vWelt0;  // ursprüngliche Lage aus dem Foto – für die Sichtprüfung, damit sie nicht vom Pool abhängt
-      // Liegt der Punkt w auf der Oberfläche, die Foto j zeigt? (im Bild und in der Tiefe passend – nicht davor, nicht
-      // dahinter). Vergleich mit den Nachbarn in der Tiefenkarte, damit es an Kanten nicht flackert.
-      float sicht(sampler2D t, mat4 M, vec2 tn, vec3 w) {
+      uniform float uHinten; // 1 = Hintergrundebene (aufgefüllt), 0 = Foto selbst
+      // Was sagt Foto j über den Punkt w?  1 = liegt auf der Fläche, die das Foto zeigt;  2 = das Foto sieht durch w
+      // hindurch auf etwas Ferneres (dort ist also nichts);  0 = keine Aussage (außerhalb des Bildes oder verdeckt).
+      // Vergleich mit Nachbarn in der Tiefenkarte, damit es an Kanten nicht flackert.
+      float aussage(sampler2D t, mat4 M, vec2 tn, vec3 w) {
         vec4 c = M * vec4(w, 1.0); float z = -c.z; if (z < 0.2) return 0.0;
         vec2 uv = vec2((c.x / z / tn.x + 1.0) * 0.5, (1.0 - c.y / z / tn.y) * 0.5);
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+        if (uv.x < 0.02 || uv.x > 0.98 || uv.y < 0.02 || uv.y > 0.98) return 0.0;
         vec2 px = 1.5 / vec2(textureSize(t, 0));
         float a = texture2D(t, uv).r, b = texture2D(t, uv + vec2(px.x, 0.0)).r, d = texture2D(t, uv - vec2(px.x, 0.0)).r;
         float e = texture2D(t, uv + vec2(0.0, px.y)).r, f = texture2D(t, uv - vec2(0.0, px.y)).r;
-        // passt zu einem der Nachbarwerte (nicht zum Bereich dazwischen: dort, an Tiefensprüngen, hat das Foto keine Fläche)
-        #define NAH(s) (abs(z - (s)) <= (s) * 0.08 + 0.3)
-        return (NAH(a) || NAH(b) || NAH(d) || NAH(e) || NAH(f)) ? 1.0 : 0.0;
+        #define NAH(s) (abs(z - (s)) <= (s) * 0.12 + 0.35)
+        if (NAH(a) || NAH(b) || NAH(d) || NAH(e) || NAH(f)) return 1.0;
+        float lo = min(a, min(min(b, d), min(e, f)));
+        return z < lo * 0.85 - 0.3 ? 2.0 : 0.0; // deutlich vor allem, was das Foto dort sieht: freier Raum
       }
-      // Welches Foto zeigt diesen Punkt am besten? Unter den Fotos, die ihn unverdeckt sehen, das mit der ähnlichsten
-      // Blickrichtung wie der Betrachter gerade. So füllen andere Fotos auf, was in einem Foto hinter Bäumen, Hecken
-      // oder Hausecken verborgen ist. Sieht ihn keines, bleibt das eigene (aufgefüllte) Bild (Rückgabe −1).
-      int zustaendig(vec3 w) {
-        int best = -1; float bs = -2.0; vec3 zuBetr = normalize(uBetrachter - w);
+      // Wie gut passt die Blickrichtung von Foto j zu der des Betrachters (1 = gleich)?
+      float passt(int j, vec3 w, vec3 zuBetr) { return dot(normalize(vec3(uKams[j].x, uKamHoehe, uKams[j].y) - w), zuBetr); }
+      // Soll dieses Foto (uIch) den Punkt w weglassen? Ja, wenn ein Foto, dessen Blickrichtung besser zum Betrachter
+      // passt, dort selbst eine Fläche zeigt oder durch w hindurchsieht (dann wäre w ein schwebendes Bruchstück).
+      // Die Hintergrundebene weicht jedem Foto, das echte Bildinformation zu dieser Stelle hat.
+      bool weglassen(vec3 w) {
+        vec3 zuBetr = normalize(uBetrachter - w);
         float v[4];
-        v[0] = uKamAnzahl > 0 ? sicht(uTiefe0, uKamMat[0], uKamTan[0], w) : 0.0;
-        v[1] = uKamAnzahl > 1 ? sicht(uTiefe1, uKamMat[1], uKamTan[1], w) : 0.0;
-        v[2] = uKamAnzahl > 2 ? sicht(uTiefe2, uKamMat[2], uKamTan[2], w) : 0.0;
-        v[3] = uKamAnzahl > 3 ? sicht(uTiefe3, uKamMat[3], uKamTan[3], w) : 0.0;
+        v[0] = uKamAnzahl > 0 ? aussage(uTiefe0, uKamMat[0], uKamTan[0], w) : 0.0;
+        v[1] = uKamAnzahl > 1 ? aussage(uTiefe1, uKamMat[1], uKamTan[1], w) : 0.0;
+        v[2] = uKamAnzahl > 2 ? aussage(uTiefe2, uKamMat[2], uKamTan[2], w) : 0.0;
+        v[3] = uKamAnzahl > 3 ? aussage(uTiefe3, uKamMat[3], uKamTan[3], w) : 0.0;
+        float ich = 0.0, sIch = 0.0;
+        for (int j = 0; j < 4; j++) if (j == uIch) { ich = v[j]; sIch = passt(j, w, zuBetr); }
+        bool echt = uHinten < 0.5 || ich == 1.0; // Foto selbst – oder Hintergrund, wo das Foto nichts verdeckt
         for (int j = 0; j < 4; j++) { if (j >= uKamAnzahl) break;
-          if (v[j] < 0.5) continue;
-          float s = dot(normalize(vec3(uKams[j].x, uKamHoehe, uKams[j].y) - w), zuBetr);
-          if (s > bs) { bs = s; best = j; } }
-        return best; }
+          if (j == uIch || v[j] < 0.5) continue;
+          if (!echt || passt(j, w, zuBetr) > sIch) return true; }
+        return false; }
       float poolSdf(vec3 w) { vec2 q = (uPoolInv * vec4(w, 1.0)).xz; vec2 d = abs(q) - (uHalb - uRadius); return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - uRadius; }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + kopf)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -188,9 +195,9 @@ function poolShader(mat, uniforms) {
         }`)
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWelt = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + kopf)
-      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1) { int z = zustaendig(vWelt0); if (z >= 0 && z != uIch) discard; } // anderes Foto zeigt diesen Punkt besser');
+      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1 && weglassen(vWelt0)) discard; // ein passenderes Foto zeigt hier etwas anderes');
   };
-  mat.customProgramCacheKey = () => 'ki-gelaende-5';
+  mat.customProgramCacheKey = () => 'ki-gelaende-6';
 }
 
 /**
@@ -354,7 +361,7 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, o
     // Textur: von der KI ergänztes Bild (opts.fuellBild, wenn schon berechnet), sonst einfach von außen nach innen verwischt
     const hgTex = new THREE.CanvasTexture(opts.fuellBild ?? fotoAuffuellen(img, t)); hgTex.colorSpace = THREE.SRGBColorSpace; texturen.push(hgTex);
     const hgMat = new THREE.MeshBasicMaterial({ map: hgTex, toneMapped: false, side: THREE.DoubleSide });
-    poolShader(hgMat, uniforms);
+    poolShader(hgMat, fotoUniforms(gemeinsam, opts.nr ?? 0, true));
     const hinten = new THREE.Mesh(gitter(hg, k, p, Math.round(nx / 2), Math.round(ny / 2), uVon, uBis, false, 1.02), hgMat);
     hinten.name = 'KI_Hintergrund'; hinten.renderOrder = -1.2;
     gruppe.add(hinten);
