@@ -334,6 +334,7 @@ function abdeckungOptionenNormalisieren(a, m) {
 // ---------- 3D-Szene aufbauen ----------
 function leereGruppe(g) {
   g.traverse((o) => {
+    if (o.userData.entsorgen) { o.userData.entsorgen(); return; } // z. B. Spiegelwasser mit eigenen Bildpuffern
     if (o.geometry) o.geometry.dispose();
     if (o.material) [].concat(o.material).forEach((mt) => { if (mt.map) mt.map.dispose(); mt.dispose(); });
   });
@@ -354,7 +355,11 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
 
   ersetze('pool', buildPool({
-    realistisch: QUALITAET[qualitaet].real, duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
+    realistisch: QUALITAET[qualitaet].real,
+    // echtes Spiegelwasser nur bei Hoch/Ultra im 3D-Garten (nicht in der Foto-Montage und nicht im Querschnitt)
+    spiegelWasser: QUALITAET[qualitaet].real && zustand.umgebung !== 'foto' && zustand.schnitt === 'aus',
+    spiegelAufloesung: qualitaet === 'ultra' ? 1024 : 512, sonne: () => sonne.position.clone().sub(sonne.target.position), himmel: () => hintergrund.background || scene.environment, // freies Modell: schlichte Hintergrundfarbe statt Studiolicht
+    duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
     pool, groesse: g, wandHex, rauigkeit: istPP ? (zustand.oberflaeche === 'genarbt' ? 0.9 : 0.3) : 0.55,
     einstieg: zustand.einstieg, seite: zustand.seite, richtwerte: daten.treppen._richtwerte,
     einbauHex: daten.farben_3d.einbauteile.weiss.hex, mitRand: !zustand.umrandung,

@@ -14,8 +14,9 @@ import { GTAOPass } from './lib/postprocessing/GTAOPass.js';
 import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
 import { tiefeSchaetzen } from './tiefe.js';
-import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern } from './gelaende.js';
+import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern, kameraMatrix } from './gelaende.js';
 import { exifLesen, bildwinkelAusF35, gpsZuMeter, istHeic } from './exif.js';
+import { fotosVerknuepfen } from './verknuepfen.js';
 import { GARTEN_STANDARD, RICHTUNGEN, bilderHinzu, bildEntfernen, bildRichtung, gartenBilder, gartenUmgebung, gartenBoden, panoramaBauen } from './garten3d.js';
 import { GroundedSkybox } from './lib/GroundedSkybox.js';
 import { FOTO_STANDARD, fotoLaden, fotoBild, fotoRechteck, fotoKamera, fotoBoden, sonnenRichtung, fotoZusammensetzen } from './foto.js';
@@ -198,6 +199,7 @@ function kiLageAnwenden() {
     const y = THREE.MathUtils.degToRad(b.yaw);
     u.uKams.value[i].set(b.pos.x, b.pos.z, Math.sin(y), -Math.cos(y));
     u.uKamCos.value[i] = Math.cos(THREE.MathUtils.degToRad(kiBildwinkel(b) / 2 + 2)); // bis an den Bildrand zuständig
+    const g = ki.gelaende[i]; if (g && b.kalib) kameraMatrix(g.gruppe, b.kalib, zustand.ki.hoehe, u.uKamMat.value[i]); // für die Sichtprüfung
   });
 }
 /** Lage der Fotos aus GPS und Kompass (iPhone): Hauptfoto im Ursprung, Blick nach −z; die anderen relativ dazu. */
@@ -214,6 +216,30 @@ function kiLageAusFotodaten() {
     b.quelle = 'gps';
   }
   return true;
+}
+/**
+ * Fotos automatisch miteinander verknüpfen: Die Grundrisse aus der Tiefe (Hecken, Wände, Bäume von oben) werden
+ * aufeinandergelegt, ausgehend von GPS und Kompass. Übernommen wird nur, was eindeutig passt; sonst bleibt die Lage.
+ * Rückgabe: Anzahl der automatisch angelegten Fotos.
+ */
+async function kiVerknuepfen(melden = true) {
+  if (ki.bilder.length < 2 || ki.verknuepfung) return 0;
+  ki.verknuepfung = true;
+  try {
+    if (ki.bilder.some((b) => !b.kalib)) kiKalibrieren();
+    const { ergebnis } = await fotosVerknuepfen(ki.bilder, kiParam, (f) => zeigeMeldung(`Die Fotos werden miteinander verknüpft (lokal) … ${Math.round(f * 100)} %`));
+    let n = 0;
+    ergebnis.forEach((e, i) => {
+      const b = ki.bilder[i]; if (i === 0) return;
+      b.abgleich = { sicher: e.sicher, guete: e.guete };
+      if (e.sicher) { b.yaw = e.yaw; b.pos = { ...e.pos }; b.quelle = 'auto'; n++; }
+    });
+    ki.envSchluessel = ''; neuBauen(); kiFotoansicht(kiFotoIndex);
+    if (melden) zeigeMeldung(n ? `${n} von ${ki.bilder.length - 1} weiteren Fotos automatisch angelegt. Im Lageplan bei Bedarf nachschieben.`
+      : 'Keine eindeutige Übereinstimmung zwischen den Fotos gefunden – die Lage bleibt wie bisher (GPS/Lageplan).');
+    return n;
+  } catch (err) { console.error(err); zeigeMeldung('Das Verknüpfen der Fotos ist fehlgeschlagen: ' + (err.message || err)); return 0; }
+  finally { ki.verknuepfung = false; }
 }
 const kiGelaendeMeshes = () => ki.gelaende.flatMap((g) => g.gruppe.children.filter((o) => o.name === 'KI_Gelaende'));
 
@@ -531,6 +557,7 @@ function abdeckungOptionenNormalisieren(a, m) {
 // ---------- 3D-Szene aufbauen ----------
 function leereGruppe(g) {
   g.traverse((o) => {
+    if (o.userData.entsorgen) { o.userData.entsorgen(); return; } // z. B. Spiegelwasser mit eigenen Bildpuffern
     if (o.geometry) o.geometry.dispose();
     if (o.material) [].concat(o.material).forEach((mt) => { if (mt.map) mt.map.dispose(); mt.dispose(); });
   });
@@ -551,7 +578,11 @@ function neuBauen(kameraZuruecksetzen = false, panelNeuZeichnen = true) {
   const led = zustand.led ? ledListe(daten, pool).liste.find((l) => l.id === zustand.led) : null;
 
   ersetze('pool', buildPool({
-    realistisch: QUALITAET[qualitaet].real, duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
+    realistisch: QUALITAET[qualitaet].real,
+    // echtes Spiegelwasser nur bei Hoch/Ultra im 3D-Garten (nicht in der Foto-Montage und nicht im Querschnitt)
+    spiegelWasser: QUALITAET[qualitaet].real && zustand.umgebung !== 'foto' && zustand.schnitt === 'aus',
+    spiegelAufloesung: qualitaet === 'ultra' ? 1024 : 512, sonne: () => sonne.position.clone().sub(sonne.target.position), himmel: () => hintergrund.background || scene.environment, // freies Modell: schlichte Hintergrundfarbe statt Studiolicht
+    duesenRegel: daten.einlaufduesen_regel, ledRegel: daten.led_regel,
     pool, groesse: g, wandHex, rauigkeit: istPP ? (zustand.oberflaeche === 'genarbt' ? 0.9 : 0.3) : 0.55,
     einstieg: zustand.einstieg, seite: zustand.seite, richtwerte: daten.treppen._richtwerte,
     einbauHex: daten.farben_3d.einbauteile.weiss.hex, mitRand: !zustand.umrandung,
@@ -1092,12 +1123,17 @@ function lageplanBlock() {
   zeichnen();
   const gps = ki.bilder.every((b) => b.exif?.lat !== undefined && b.exif?.richtung !== undefined);
   const zurueck = el('button', { type: 'button', className: 'knopf hell', textContent: 'Lage wieder aus GPS und Kompass', disabled: !gps });
-  zurueck.addEventListener('click', () => { kiLageAusFotodaten(); ki.envSchluessel = ''; neuBauen(); });
+  zurueck.addEventListener('click', () => { kiLageAusFotodaten(); ki.bilder.forEach((b) => { b.abgleich = null; }); ki.envSchluessel = ''; neuBauen(); });
+  const automatisch = el('button', { type: 'button', className: 'knopf', textContent: 'Fotos automatisch verknüpfen' });
+  automatisch.addEventListener('click', async () => { automatisch.disabled = true; await kiVerknuepfen(); zeichnePanel(); });
+  const stand = ki.bilder.slice(1).filter((b) => b.abgleich).map((b) => `Foto ${ki.bilder.indexOf(b) + 1}: ${b.abgleich.sicher
+    ? `automatisch angelegt (${Math.round(b.abgleich.guete * 100)} % Übereinstimmung)` : 'keine eindeutige Übereinstimmung – Lage aus GPS/Hand'}`);
   return [
     el('h3', { textContent: 'Lageplan der Fotos' }),
-    hinweis(gps ? 'Standorte und Blickrichtungen kommen aus GPS und Kompass der Fotos (auf ca. 2–5 m bzw. 5–10° genau). Zum Feinjustieren: farbigen Punkt ziehen = Standort, weißen Griff ziehen = Blickrichtung, Pool ziehen = verschieben.'
-      : 'Die Fotos haben keine GPS-/Kompassdaten. Standort (farbiger Punkt) und Blickrichtung (weißer Griff) bitte so ziehen, wie die Fotos aufgenommen wurden.'),
-    c, el('div', { className: 'knoepfe' }, zurueck),
+    hinweis(gps ? 'Standorte und Blickrichtungen kommen aus GPS und Kompass der Fotos (auf ca. 2–5 m bzw. 5–10° genau) und werden danach automatisch an Hecken, Wänden und Bäumen abgeglichen, die auf mehreren Fotos zu sehen sind. Zum Feinjustieren: farbigen Punkt ziehen = Standort, weißen Griff ziehen = Blickrichtung, Pool ziehen = verschieben.'
+      : 'Die Fotos haben keine GPS-/Kompassdaten. „Fotos automatisch verknüpfen“ versucht, die Lage aus gemeinsamen Hecken, Wänden und Bäumen zu finden. Sonst Standort (farbiger Punkt) und Blickrichtung (weißer Griff) so ziehen, wie die Fotos aufgenommen wurden.'),
+    c, el('div', { className: 'knoepfe' }, automatisch, zurueck),
+    stand.length ? hinweis(stand.join(' · ')) : '',
   ];
 }
 
@@ -1209,7 +1245,8 @@ $('ki-datei').addEventListener('change', async (e) => { // neu beginnen: erstes 
     const ausGps = kiLageAusFotodaten(); ki.schluessel = ''; ki.envSchluessel = ''; ki.messen = null; messAnzeigen(); kiFotoIndex = 0;
     zustand.umgebung = 'ki'; zustand.ki.z = null; zustand.ki.x = 0; zustand.schnitt = 'aus';
     neuBauen(true); kiFotoansicht(0);
-    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ', Bildwinkel aus den Fotodaten' : ''}${neu.length > 1 ? (ausGps ? ', Lage aus GPS und Kompass' : ' – bitte die Lage im Lageplan einstellen') : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
+    const auto = neu.length > 1 ? await kiVerknuepfen(false) : 0;
+    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ', Bildwinkel aus den Fotodaten' : ''}${neu.length > 1 ? (auto ? `, ${auto} Foto(s) automatisch verknüpft` : ausGps ? ', Lage aus GPS und Kompass' : ' – bitte die Lage im Lageplan einstellen') : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto vom selben Standpunkt hinzufügen
@@ -1223,7 +1260,9 @@ $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto
     }
     kiLageAusFotodaten();
     ki.schluessel = ''; neuBauen(); kiFotoansicht(ki.bilder.length - 1);
-    zeigeMeldung(ki.bilder.every((b) => b.exif?.lat !== undefined) ? 'Foto hinzugefügt, Lage aus GPS und Kompass. Im Lageplan bei Bedarf nachschieben.' : 'Foto hinzugefügt. Im Lageplan Standort und Blickrichtung einstellen.');
+    const auto = await kiVerknuepfen(false);
+    zeigeMeldung(auto ? `Foto hinzugefügt und automatisch mit den anderen verknüpft (${auto} Foto(s) angelegt). Im Lageplan bei Bedarf nachschieben.`
+      : ki.bilder.every((b) => b.exif?.lat !== undefined) ? 'Foto hinzugefügt, Lage aus GPS und Kompass. Im Lageplan bei Bedarf nachschieben.' : 'Foto hinzugefügt. Im Lageplan Standort und Blickrichtung einstellen.');
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 

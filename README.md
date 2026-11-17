@@ -17,7 +17,7 @@ Die Startseite (`index.html`, wird von `start.command` geöffnet) bietet zwei Ve
 - **KI-Version** (`app-ki/`): alles aus der Version ohne KI, dazu **„KI-Garten aus einem Foto (3D)“**. Ein einziges Gartenfoto genügt: Ein KI-Modell (Depth Anything V2 Small, lokal im Browser über onnxruntime-web) schätzt für jeden Bildpunkt die Entfernung. Daraus entsteht ein 3D-Gelände; Boden, Horizont und Maßstab werden automatisch geschätzt. Der Pool sitzt im Gelände (Aussparung, Einebnung ringsum, Schatten), lässt sich direkt anfassen und verschieben (Umschalt + Mausrad dreht ihn), und man kann sich etwa ±55° um den Fotostandpunkt umschauen. Startansicht = das Foto.
   - Rechenzeit ca. 5 s pro Foto auf einem aktuellen Rechner. Modell (27 MB) und Rechenkern (15 MB) liegen im Ordner, es gibt keine Verbindung nach außen; das Foto verlässt den Rechner nicht und wird nicht gespeichert.
   - **Ablauf für Kunden:** Der Kunde fotografiert nach der Anleitung (`app-ki/anleitung.html`, eine Seite zum Ausdrucken/als PDF, auch auf der Startseite verlinkt) 2–4 Fotos und bringt das Handy mit. Im Laden: Fotos laden, im Hauptfoto den Pool platzieren, über die Vorschaubilder unten im Bild zu den anderen Ansichten fahren und dort den Pool an dieselbe Stelle ziehen – dabei wird das jeweilige Foto angepasst (gleicht GPS-/Kompass-Ungenauigkeit aus). Umschauen ist auf den sauberen Bereich um jede Fotoansicht begrenzt; „Freies Umschauen“ schaltet die Grenzen für Profis ab.
-  - Bis zu 4 Fotos, auch von verschiedenen Standorten. Bei iPhone-Fotos kommen Standort (GPS, ca. 2–5 m genau) und Blickrichtung (Kompass) automatisch aus den Fotodaten; im **Lageplan** (Draufsicht) lassen sich Standort und Richtung jedes Fotos mit der Maus nachschieben. Jeder Punkt zeigt das Foto, das ihn aus der ähnlichsten Richtung sieht wie der Betrachter – in der Ansicht eines Fotos sieht man genau dieses Foto.
+  - Bis zu 4 Fotos, auch von verschiedenen Standorten. Bei iPhone-Fotos kommen Standort (GPS, ca. 2–5 m genau) und Blickrichtung (Kompass) automatisch aus den Fotodaten; danach werden die Fotos **automatisch verknüpft**: Aus der Tiefe jedes Fotos entsteht ein Grundriss (Hecken, Wände, Bäume von oben), und die Grundrisse werden wie Puzzleteile aufeinandergelegt (ausgehend von GPS/Kompass, Abweichungen von deren Genauigkeit kosten Punkte). Übernommen wird nur, was eindeutig passt (`app-ki/verknuepfen.js`). Im **Lageplan** (Draufsicht) lassen sich Standort und Richtung jedes Fotos mit der Maus nachschieben; dort gibt es auch „Fotos automatisch verknüpfen“. Jeder Punkt des Gartens zeigt das Foto, das ihn **unverdeckt** und aus der ähnlichsten Richtung sieht wie der Betrachter (Sichtprüfung mit den Tiefenkarten aller Fotos) – was in einem Foto hinter Bäumen oder Hausecken liegt, kommt so aus einem anderen Foto.
   - Schräg gehaltene Fotos werden erkannt und gerade gerückt (Kippung, von Hand korrigierbar). Ultraweitwinkel-Fotos werden über die Brennweite richtig eingelesen.
   - HEIC (iPhone-Standard): Safari öffnet HEIC direkt; Chrome/Edge nicht – dort die Fotos als JPG speichern (iPhone: Einstellungen › Kamera › Formate › „Maximale Kompatibilität“).
   - Maßstab: Der Bildwinkel wird aus den Fotodaten (EXIF-Brennweite) gelesen. Für exakten Maßstab „Maßstab nachmessen“: zwei Punkte mit bekanntem Abstand anklicken (z. B. Terrassenplatte), echte Länge eingeben – im Test lag die Abweichung danach unter 2 %.
@@ -37,7 +37,7 @@ Die Startseite (`index.html`, wird von `start.command` geöffnet) bietet zwei Ve
 - **Einlaufdüsen:** immer gegenüber dem Skimmer, obere Reihe ca. 30 cm unter der Kante; Anzahl laut Datenblatt (Systemstein/Kompakt: 4), sonst nach Beckenfläche 2–4. Treppe/Leiter werden ausgespart, bei Platzmangel kommt eine untere Reihe bzw. die Längsseite dazu (`einlaufduesen_regel`).
 - **Scheinwerfer:** gleichmäßig über die gewählte Wand verteilt, ca. 60 cm unter dem Wasserspiegel (`led_regel`, Richtwert).
 - **Skimmer:** Standard ist ein Skimmer an der Schmalseite gegenüber dem Einstieg, bei größeren Becken zwei. Die Schwelle (24 m², bestätigt) steht in `skimmer_regel` in der JSON-Datei.
-- **Qualität:** Unter „Darstellung“ gibt es vier Stufen: Niedrig, Mittel, Hoch (Standard: Himmel, Spiegelungen, Lichtbrechung im Wasser, Lichtmuster am Boden, Umgebungsverdeckung und Kantenglättung) und Ultra (sehr scharf, bewegtes Wasser). Auf schwacher Grafik runterschalten.
+- **Qualität:** Unter „Darstellung“ gibt es vier Stufen: Niedrig, Mittel, Hoch (Standard: Himmel, echtes Spiegelwasser mit Spiegelung der Umgebung und Lichtbrechung durch die Wellen, Farbverlauf des Wassers nach Tiefe und Blickwinkel, Sonnenglitzern, Lichtmuster am Boden, Umgebungsverdeckung und Kantenglättung) und Ultra (sehr scharf, bewegtes Wasser). Auf schwacher Grafik runterschalten.
 - **Öffnen und Verschieben:** Überdachung, Rollabdeckungen und WaluDeck lassen sich mit einem Regler öffnen bzw. verschieben.
 - **Nicht kombinierbare Optionen** sind ausgegraut, darunter steht der Grund.
 - **Ergebnis festhalten:** Zusammenfassung drucken oder als PDF sichern, Screenshot (PNG), 3D-Modell (GLB, der Pool immer als geschlossener Körper ohne Rasen), Konfiguration speichern und wieder laden. Alles wird direkt heruntergeladen, nichts hochgeladen.
@@ -46,7 +46,7 @@ Die Startseite (`index.html`, wird von `start.command` geöffnet) bietet zwei Ve
 
 ```
 index.html                Startseite: Auswahl KI-Version / Version ohne KI
-app-ki/                   KI-Version (wie app/, zusätzlich tiefe.js, gelaende.js, lib/ort/, modelle/)
+app-ki/                   KI-Version (wie app/, zusätzlich tiefe.js, gelaende.js, verknuepfen.js, exif.js, lib/ort/, modelle/)
 CLAUDE.md                 Auftrag und Rahmenbedingungen
 start.command             lokaler Start
 daten/
@@ -66,7 +66,7 @@ app/
   abdeckung.js            Safty, WaluDeck, Roll'Top 100/300
   regeln.js               Kombinierbarkeit, liest die Felder "bedingungen" aus der JSON
   export.js               Screenshot-, GLB-, Konfigurations-Dateien
-  lib/                    Three.js 0.187.0 lokal (inkl. Sky, RoomEnvironment, GLTFExporter, OrbitControls und Nachbearbeitung GTAO/SMAA) (MIT-Lizenz, siehe THREE-LICENSE.txt)
+  lib/                    Three.js 0.187.0 lokal (inkl. Sky, RoomEnvironment, GLTFExporter, OrbitControls, Water2/Reflector/Refractor fürs Spiegelwasser und Nachbearbeitung GTAO/SMAA) (MIT-Lizenz, siehe THREE-LICENSE.txt)
 ```
 
 ## Produktdaten pflegen
@@ -93,7 +93,8 @@ Siehe `offene_punkte` am Ende der JSON-Datei:
 - Alle Becken werden als eingelassen dargestellt (Rundpool ohne Handlauf und Stahlmantel über dem Rasen).
 - Überdachungen und Abdeckungen sind detailliert, aber nicht maßstabsgetreu bis ins Letzte: Roll'Top-Bankgröße geschätzt, Elemente der Überdachung vereinfacht, Beton und Baustahl im Schnitt sind Richtwerte.
 - Überdachungen und Abdeckungen gibt es nur für Rechteckpools.
-- Die Wasserfläche ist ein einfaches, leicht durchsichtiges Rechteck ohne Wellen.
+- Spiegelwasser gibt es nur bei Hoch/Ultra im 3D-Garten; in der Foto-Montage und im Querschnitt ist das Wasser eine einfachere, halbtransparente Fläche.
+- KI-Garten: Das automatische Verknüpfen braucht Dinge, die auf mehreren Fotos zu sehen sind. Entlang gleichförmiger Hecken oder Wände bleibt die Lage aus GPS maßgeblich. Bereiche, die kein Foto zeigt, bleiben aufgefüllt/geschätzt.
 - Nicht getestet: Touch-Bedienung, Handy-Ansicht, Leistung auf dem Firmen-Laptop, echter Druckdialog, GLB-Datei in einem 3D-Programm.
 
 ## Phase 5 (optional, später)

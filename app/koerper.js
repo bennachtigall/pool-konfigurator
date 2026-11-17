@@ -25,11 +25,12 @@ const mat = (hex, r = 0.9, met = 0) => new THREE.MeshStandardMaterial({ color: h
 
 function allgemeinKoerper(m, off) {
   const group = new THREE.Group(), material = mat(0xbfc3c6);
-  const aussen = umrissPunkte(m, off), innen = umrissPunkte(m, 0);
+  // 3 mm Abstand zur Beckenhaut: sonst liegen Flächen genau aufeinander und „flimmern“ (besonders durchs Spiegelwasser)
+  const aussen = umrissPunkte(m, off), innen = umrissPunkte(m, 0.003);
   const ring = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(aussen, [innen]), { depth: m.T + 0.05, bevelEnabled: false }).rotateX(-Math.PI / 2), material);
   ring.position.y = -(m.T + 0.05);
   const platte = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(aussen), { depth: 0.05, bevelEnabled: false }).rotateX(-Math.PI / 2), material);
-  platte.position.y = -(m.T + 0.05);
+  platte.position.y = -(m.T + 0.053);
   ring.name = 'Poolkoerper_Wand'; platte.name = 'Poolkoerper_Boden';
   group.add(ring, platte);
   return group;
@@ -70,7 +71,7 @@ function steinKoerper(m, a) {
   steine.name = 'Styroporsteine';
   const bd = a.boden.dicke_m;                    // Bodenplatte (bauseits, Richtwert)
   const boden = new THREE.Mesh(new THREE.BoxGeometry(L + 2 * t, bd, B + 2 * t), mat(0x9a9d9f));
-  boden.position.y = -T - bd / 2; boden.name = 'Bodenplatte';
+  boden.position.y = -T - bd / 2 - 0.003; boden.name = 'Bodenplatte'; // knapp unter der Beckenhaut
   gruppe.add(steine, boden);
   return gruppe;
 }
@@ -81,10 +82,10 @@ function ppKoerper(m, a, technik) {
   const tw = (a.wand_platte_mm + a.daemmung_mm) / 1000, bp = (a.boden_platte_mm + a.daemmung_mm) / 1000;
   const r = a.rippen, gruppe = new THREE.Group();
   const haut = mat(0xe7e2d2, 0.8), rippe = mat(0xf4f4f1, 0.6), rohr = mat(0x3f4448, 0.6, 0.2), blau = mat(0x2c9be0, 0.5);
-  const ring = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(umrissPunkte(m, tw), [umrissPunkte(m, 0)]), { depth: T + bp, bevelEnabled: false }).rotateX(-Math.PI / 2), haut);
+  const ring = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(umrissPunkte(m, tw), [umrissPunkte(m, 0.003)]), { depth: T + bp, bevelEnabled: false }).rotateX(-Math.PI / 2), haut);
   ring.position.y = -(T + bp); ring.name = 'PP_Aussenhaut';
   const boden = new THREE.Mesh(new THREE.ExtrudeGeometry(flaecheGeo(umrissPunkte(m, tw)), { depth: bp, bevelEnabled: false }).rotateX(-Math.PI / 2), haut);
-  boden.position.y = -(T + bp); boden.name = 'PP_Boden';
+  boden.position.y = -(T + bp) - 0.003; boden.name = 'PP_Boden'; // knapp unter der Beckenhaut
   gruppe.add(ring, boden);
 
   const aussen = tw + r.tiefe_m / 2;

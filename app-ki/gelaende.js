@@ -107,13 +107,13 @@ export function kalibrieren(t, seitenverh, p) {
 }
 
 /** Planare Tiefe (m) an Bildkoordinaten u, v. */
-const tiefeBei = (t, k, p, u, v) => {
+export const tiefeBei = (t, k, p, u, v) => {
   const inv = k.s * (abtasten(t, u, v) - k.dUnendlich);
   return inv > 1 / p.ferne ? Math.max(0.3, 1 / inv) : p.ferne;
 };
 
 /** Weltpunkt zu Bildkoordinaten u, v und planarer Tiefe z. Kamera bei (0, Höhe, 0), Blick nach −z. */
-function weltPunkt(k, p, u, v, z, ziel) {
+export function weltPunkt(k, p, u, v, z, ziel) {
   const a = (2 * u - 1) * k.tanX, b = (1 - 2 * v) * k.tanY, cr = Math.cos(k.roll ?? 0), sr = Math.sin(k.roll ?? 0);
   const xc = (a * cr + b * sr) * z, yc = (-a * sr + b * cr) * z, zc = -z;            // Kippung ausgleichen
   const c = Math.cos(k.neigung), s = Math.sin(k.neigung);
@@ -133,6 +133,9 @@ const poolUniforms = () => ({
   // mehrere Fotos: Kamerastandorte (x, z, Blick-x, Blick-z) und halber Bildwinkel als Kosinus
   uKams: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uKamCos: { value: [0, 0, 0, 0] }, uKamAnzahl: { value: 0 },
   uKamHoehe: { value: 1.6 }, uBetrachter: { value: new THREE.Vector3() },
+  // Sichtprüfung: je Foto Welt→Kamera-Matrix, Bildwinkel (tan) und Tiefenkarte in Metern
+  uKamMat: { value: [0, 1, 2, 3].map(() => new THREE.Matrix4()) }, uKamTan: { value: [0, 1, 2, 3].map(() => new THREE.Vector2(1, 1)) },
+  uTiefe0: { value: null }, uTiefe1: { value: null }, uTiefe2: { value: null }, uTiefe3: { value: null },
 });
 /** Uniforms eines Fotos: gemeinsame Werte (Pool, Kameras) plus eigene Nummer. */
 export const fotoUniforms = (gemeinsam, nr) => ({ ...gemeinsam, uIch: { value: nr } });
@@ -143,14 +146,28 @@ function poolShader(mat, uniforms) {
       uniform mat4 uPoolInv; uniform vec2 uHalb; uniform float uRadius; uniform float uRand; uniform float uAktiv;
       uniform vec4 uKams[4]; uniform float uKamCos[4]; uniform int uKamAnzahl; uniform int uIch;
       uniform float uKamHoehe; uniform vec3 uBetrachter;
+      uniform mat4 uKamMat[4]; uniform vec2 uKamTan[4];
+      uniform sampler2D uTiefe0; uniform sampler2D uTiefe1; uniform sampler2D uTiefe2; uniform sampler2D uTiefe3;
       varying vec3 vWelt;
-      // Welches Foto zeigt diesen Punkt am besten? Das, dessen Kamera ihn aus der ähnlichsten Richtung sieht wie der
-      // Betrachter gerade (blickabhängig). In der Fotoansicht ist das genau dieses Foto; beim Umschauen wechselt es.
+      // Sieht Foto j den Punkt w – im Bild und nicht von etwas Näherem verdeckt (Vergleich mit seiner Tiefenkarte)?
+      float sicht(sampler2D t, mat4 M, vec2 tn, vec3 w) {
+        vec4 c = M * vec4(w, 1.0); float z = -c.z; if (z < 0.2) return 0.0;
+        vec2 uv = vec2((c.x / z / tn.x + 1.0) * 0.5, (1.0 - c.y / z / tn.y) * 0.5);
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+        return z <= texture2D(t, uv).r * 1.06 + 0.25 ? 1.0 : 0.0;
+      }
+      // Welches Foto zeigt diesen Punkt am besten? Unter den Fotos, die ihn unverdeckt sehen, das mit der ähnlichsten
+      // Blickrichtung wie der Betrachter gerade. So füllen andere Fotos auf, was in einem Foto hinter Bäumen, Hecken
+      // oder Hausecken verborgen ist. Sieht ihn keines, bleibt das eigene (aufgefüllte) Bild (Rückgabe −1).
       int zustaendig(vec3 w) {
         int best = -1; float bs = -2.0; vec3 zuBetr = normalize(uBetrachter - w);
+        float v[4];
+        v[0] = uKamAnzahl > 0 ? sicht(uTiefe0, uKamMat[0], uKamTan[0], w) : 0.0;
+        v[1] = uKamAnzahl > 1 ? sicht(uTiefe1, uKamMat[1], uKamTan[1], w) : 0.0;
+        v[2] = uKamAnzahl > 2 ? sicht(uTiefe2, uKamMat[2], uKamTan[2], w) : 0.0;
+        v[3] = uKamAnzahl > 3 ? sicht(uTiefe3, uKamMat[3], uKamTan[3], w) : 0.0;
         for (int j = 0; j < 4; j++) { if (j >= uKamAnzahl) break;
-          vec2 d = w.xz - uKams[j].xy; float l = length(d);
-          if (l < 0.01 || dot(d / l, uKams[j].zw) < uKamCos[j]) continue;
+          if (v[j] < 0.5) continue;
           float s = dot(normalize(vec3(uKams[j].x, uKamHoehe, uKams[j].y) - w), zuBetr);
           if (s > bs) { bs = s; best = j; } }
         return best; }
@@ -166,7 +183,7 @@ function poolShader(mat, uniforms) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + kopf)
       .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1) { int z = zustaendig(vWelt); if (z >= 0 && z != uIch) discard; } // anderes Foto zeigt diesen Punkt besser');
   };
-  mat.customProgramCacheKey = () => 'ki-gelaende-3';
+  mat.customProgramCacheKey = () => 'ki-gelaende-4';
 }
 
 /**
@@ -231,6 +248,23 @@ function fotoAuffuellen(img, t, hg, schwelle) {
   return c;
 }
 
+/** Tiefenkarte (planare Tiefe in Metern) als Textur für die Sichtprüfung im Shader. */
+function tiefenTextur(t, k, p, breite = 256) {
+  const hoehe = Math.max(8, Math.round((breite * t.hoehe) / t.breite)), d = new Float32Array(breite * hoehe);
+  for (let y = 0; y < hoehe; y++) for (let x = 0; x < breite; x++) d[y * breite + x] = tiefeBei(t, k, p, x / (breite - 1), y / (hoehe - 1));
+  const tex = new THREE.DataTexture(d, breite, hoehe, THREE.RedFormat, THREE.FloatType);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.needsUpdate = true; // Zeile 0 = oberer Bildrand
+  return tex;
+}
+
+/** Welt→Kamera-Matrix eines Fotos (Kamera: Blick nach −z, x rechts, y oben) aus seiner Gelände-Gruppe. */
+export function kameraMatrix(gruppe, k, hoehe, ziel = new THREE.Matrix4()) {
+  gruppe.updateMatrixWorld();
+  const lokal = new THREE.Matrix4().makeTranslation(0, hoehe, 0)
+    .multiply(new THREE.Matrix4().makeRotationX(k.neigung)).multiply(new THREE.Matrix4().makeRotationZ(-(k.roll ?? 0)));
+  return ziel.multiplyMatrices(gruppe.matrixWorld, lokal).invert();
+}
+
 /** Gitter-Geometrie aus Tiefe (gemeinsam für Vorder- und Hintergrundebene). */
 function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
   const pos = new Float32Array((nx + 1) * (ny + 1) * 3), uv = new Float32Array((nx + 1) * (ny + 1) * 2), zs = new Float32Array((nx + 1) * (ny + 1));
@@ -280,6 +314,8 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, o
   const nx = Math.max(8, Math.round(aufloesung * (uBis - uVon))), ny = Math.max(2, Math.round(aufloesung / seitenverh));
   const gemeinsam = opts.uniforms ?? poolUniforms(), uniforms = fotoUniforms(gemeinsam, opts.nr ?? 0);
   const gruppe = new THREE.Group(), texturen = [];
+  const nr = opts.nr ?? 0, tiefeTex = tiefenTextur(t, k, p); texturen.push(tiefeTex);
+  gemeinsam['uTiefe' + nr].value = tiefeTex; gemeinsam.uKamTan.value[nr].set(k.tanX, k.tanY);
 
   // Vorderebene
   const geo = gitter(t, k, p, nx, ny, uVon, uBis, true);
