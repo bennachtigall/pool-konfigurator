@@ -148,13 +148,20 @@ function poolShader(mat, uniforms) {
       uniform float uKamHoehe; uniform vec3 uBetrachter;
       uniform mat4 uKamMat[4]; uniform vec2 uKamTan[4];
       uniform sampler2D uTiefe0; uniform sampler2D uTiefe1; uniform sampler2D uTiefe2; uniform sampler2D uTiefe3;
-      varying vec3 vWelt;
-      // Sieht Foto j den Punkt w – im Bild und nicht von etwas Näherem verdeckt (Vergleich mit seiner Tiefenkarte)?
+      varying vec3 vWelt;   // Lage im Raum (rund um den Pool eingeebnet)
+      varying vec3 vWelt0;  // ursprüngliche Lage aus dem Foto – für die Sichtprüfung, damit sie nicht vom Pool abhängt
+      // Liegt der Punkt w auf der Oberfläche, die Foto j zeigt? (im Bild und in der Tiefe passend – nicht davor, nicht
+      // dahinter). Vergleich mit den Nachbarn in der Tiefenkarte, damit es an Kanten nicht flackert.
       float sicht(sampler2D t, mat4 M, vec2 tn, vec3 w) {
         vec4 c = M * vec4(w, 1.0); float z = -c.z; if (z < 0.2) return 0.0;
         vec2 uv = vec2((c.x / z / tn.x + 1.0) * 0.5, (1.0 - c.y / z / tn.y) * 0.5);
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
-        return z <= texture2D(t, uv).r * 1.06 + 0.25 ? 1.0 : 0.0;
+        vec2 px = 1.5 / vec2(textureSize(t, 0));
+        float a = texture2D(t, uv).r, b = texture2D(t, uv + vec2(px.x, 0.0)).r, d = texture2D(t, uv - vec2(px.x, 0.0)).r;
+        float e = texture2D(t, uv + vec2(0.0, px.y)).r, f = texture2D(t, uv - vec2(0.0, px.y)).r;
+        // passt zu einem der Nachbarwerte (nicht zum Bereich dazwischen: dort, an Tiefensprüngen, hat das Foto keine Fläche)
+        #define NAH(s) (abs(z - (s)) <= (s) * 0.08 + 0.3)
+        return (NAH(a) || NAH(b) || NAH(d) || NAH(e) || NAH(f)) ? 1.0 : 0.0;
       }
       // Welches Foto zeigt diesen Punkt am besten? Unter den Fotos, die ihn unverdeckt sehen, das mit der ähnlichsten
       // Blickrichtung wie der Betrachter gerade. So füllen andere Fotos auf, was in einem Foto hinter Bäumen, Hecken
@@ -174,16 +181,16 @@ function poolShader(mat, uniforms) {
       float poolSdf(vec3 w) { vec2 q = (uPoolInv * vec4(w, 1.0)).xz; vec2 d = abs(q) - (uHalb - uRadius); return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - uRadius; }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + kopf)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec3 w0 = (modelMatrix * vec4(transformed, 1.0)).xyz;
-        if (uAktiv > 0.5) { // Gelände rund um den Pool sanft auf Bodenhöhe einebnen
+        vec3 w0 = (modelMatrix * vec4(transformed, 1.0)).xyz; vWelt0 = w0;
+        if (uAktiv > 0.5) { // nur kleine Bodenwellen rund um den Pool einebnen – Büsche, Kübel usw. bleiben stehen
           float f = 1.0 - smoothstep(0.0, uRand, poolSdf(w0));
-          if (abs(w0.y) < 0.8) transformed.y = mix(transformed.y, transformed.y - w0.y, f);
+          if (abs(w0.y) < 0.25) transformed.y = mix(transformed.y, transformed.y - w0.y, f);
         }`)
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWelt = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + kopf)
-      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1) { int z = zustaendig(vWelt); if (z >= 0 && z != uIch) discard; } // anderes Foto zeigt diesen Punkt besser');
+      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1) { int z = zustaendig(vWelt0); if (z >= 0 && z != uIch) discard; } // anderes Foto zeigt diesen Punkt besser');
   };
-  mat.customProgramCacheKey = () => 'ki-gelaende-4';
+  mat.customProgramCacheKey = () => 'ki-gelaende-5';
 }
 
 /**
@@ -224,15 +231,28 @@ function hintergrundTiefe(t, radius) {
  * Füllt im Foto die Stellen auf, an denen Vordergrund steht (Maske), mit Farben aus der Umgebung
  * (mehrstufiges Verwischen von außen nach innen). Ergebnis dient als Textur der Hintergrundebene.
  */
-function fotoAuffuellen(img, t, hg, schwelle) {
+/**
+ * Bild und Maske für die Hintergrundebene: Maske = 1 dort, wo Vordergrund steht (Baum, Busch, Hausecke), also
+ * dahinter nichts zu sehen ist. Wird von fotoAuffuellen (einfach) bzw. von der KI „LaMa“ (fuellen.js) gefüllt.
+ */
+export function hintergrundMaske(img, t) {
+  // breiterer Filter als für die Hintergrundebene: auch Büsche, Kübel und Pfosten gelten als „davor“
+  const hg = hintergrundTiefe(t, Math.max(6, Math.round(t.breite / 30))), schwelle = 0.04 * Math.max(1e-6, t.max - t.min);
   const w = Math.min(512, t.breite), h = Math.round((w * t.hoehe) / t.breite);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h);
-  const bild = g.getImageData(0, 0, w, h), px = bild.data, bekannt = new Uint8Array(w * h);
+  c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+  const maske = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const u = x / (w - 1), v = y / (h - 1), tx = Math.round(u * (t.breite - 1)), ty = Math.round(v * (t.hoehe - 1)), j = ty * t.breite + tx;
-    bekannt[y * w + x] = t.daten[j] - hg.daten[j] < schwelle ? 1 : 0;
+    maske[y * w + x] = t.daten[j] - hg.daten[j] < schwelle ? 0 : 1;
   }
+  return { bild: c, maske, hg };
+}
+
+function fotoAuffuellen(img, t) {
+  const { bild: c, maske } = hintergrundMaske(img, t), w = c.width, h = c.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const bild = g.getImageData(0, 0, w, h), px = bild.data, bekannt = maske.map((m) => 1 - m);
   for (let runde = 0; runde < 60; runde++) { // von den Rändern der Lücke nach innen auffüllen
     let offen = 0; const neu = [];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -331,8 +351,8 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, o
   // Hintergrundebene: Vordergrund weggenommen, Foto dort aufgefüllt, etwas weiter hinten
   if (opts.hintergrund !== false) {
     const hg = hintergrundTiefe(t, Math.max(4, Math.round(t.breite / 60)));
-    const spanne = Math.max(1e-6, t.max - t.min);
-    const hgTex = new THREE.CanvasTexture(fotoAuffuellen(img, t, hg, 0.04 * spanne)); hgTex.colorSpace = THREE.SRGBColorSpace; texturen.push(hgTex);
+    // Textur: von der KI ergänztes Bild (opts.fuellBild, wenn schon berechnet), sonst einfach von außen nach innen verwischt
+    const hgTex = new THREE.CanvasTexture(opts.fuellBild ?? fotoAuffuellen(img, t)); hgTex.colorSpace = THREE.SRGBColorSpace; texturen.push(hgTex);
     const hgMat = new THREE.MeshBasicMaterial({ map: hgTex, toneMapped: false, side: THREE.DoubleSide });
     poolShader(hgMat, uniforms);
     const hinten = new THREE.Mesh(gitter(hg, k, p, Math.round(nx / 2), Math.round(ny / 2), uVon, uBis, false, 1.02), hgMat);

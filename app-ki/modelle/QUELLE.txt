@@ -1,3 +1,7 @@
 Depth Anything V2 Small (onnx-community/depth-anything-v2-small, Datei onnx/model_quantized.onnx)
 Lizenz: Apache-2.0
 Quelle: https://huggingface.co/onnx-community/depth-anything-v2-small
+
+inpainting_lama_2025jan.onnx – LaMa (Füllen verdeckter Bereiche), OpenCV Model Zoo
+Quelle: https://huggingface.co/opencv/inpainting_lama (Apache License 2.0, siehe LAMA-LIZENZ.txt)
+Original: https://github.com/advimman/lama · SHA-256: 7df918ac3921d3daf0aae1d219776cf0dc4e4935f035af81841b40adcf74fdf2

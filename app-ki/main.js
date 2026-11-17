@@ -14,7 +14,8 @@ import { GTAOPass } from './lib/postprocessing/GTAOPass.js';
 import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
 import { tiefeSchaetzen } from './tiefe.js';
-import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern, kameraMatrix } from './gelaende.js';
+import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern, kameraMatrix, hintergrundMaske } from './gelaende.js';
+import { lamaFuellen } from './fuellen.js';
 import { exifLesen, bildwinkelAusF35, gpsZuMeter, istHeic } from './exif.js';
 import { fotosVerknuepfen } from './verknuepfen.js';
 import { GARTEN_STANDARD, RICHTUNGEN, bilderHinzu, bildEntfernen, bildRichtung, gartenBilder, gartenUmgebung, gartenBoden, panoramaBauen } from './garten3d.js';
@@ -175,9 +176,9 @@ function kiGelaende(m, off) {
   if (ki.schluessel !== s) {
     for (const g of ki.gelaende) { scene.remove(g.gruppe); g.gruppe.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); g.texturen.forEach((t) => t.dispose()); }
     ki.uniforms = null;
-    ki.gelaende = ki.bilder.map((b, nr) => {
+    ki.gelaende = ki.bilder.map((b, nr) => { // b.fuellBild: von der KI ergänzter Hintergrund (sobald berechnet)
       const g = gelaendeBauen(b.bild, b.tiefe, b.kalib, kiParam(b), p.schatten, qualitaet === 'niedrig' ? 180 : qualitaet === 'ultra' ? 460 : 320,
-        { nr, uniforms: ki.uniforms ?? undefined, hintergrund: qualitaet !== 'niedrig' });
+        { nr, uniforms: ki.uniforms ?? undefined, hintergrund: qualitaet !== 'niedrig', fuellBild: b.fuellBild });
       ki.uniforms = g.uniforms; scene.add(g.gruppe); return g;
     });
     ki.schluessel = s;
@@ -240,6 +241,25 @@ async function kiVerknuepfen(melden = true) {
     return n;
   } catch (err) { console.error(err); zeigeMeldung('Das Verknüpfen der Fotos ist fehlgeschlagen: ' + (err.message || err)); return 0; }
   finally { ki.verknuepfung = false; }
+}
+/**
+ * Verdeckte Bereiche aller Fotos mit der KI „LaMa“ ergänzen (einmal je Foto, lokal). Danach wird das Gelände mit
+ * den ergänzten Hintergrundbildern neu gebaut. Rückgabe: true, wenn etwas ergänzt wurde.
+ */
+async function kiVerdecktesFuellen() {
+  if (ki.fuellen) return false;
+  ki.fuellen = true;
+  let neu = 0;
+  try {
+    for (const b of ki.bilder.filter((x) => !x.fuellBild)) {
+      const nr = ki.bilder.indexOf(b) + 1, { bild, maske } = hintergrundMaske(b.bild, b.tiefe);
+      b.fuellBild = await lamaFuellen(bild, maske, (t) => zeigeMeldung(`Foto ${nr}: ${t}`));
+      neu++;
+    }
+  } catch (err) { console.error(err); zeigeMeldung('Die KI zum Ergänzen verdeckter Bereiche konnte nicht rechnen – es bleibt die einfache Füllung. ' + (err.message || err)); return false; }
+  finally { ki.fuellen = false; }
+  if (neu && zustand.umgebung === 'ki') { ki.schluessel = ''; neuBauen(); }
+  return neu > 0;
 }
 const kiGelaendeMeshes = () => ki.gelaende.flatMap((g) => g.gruppe.children.filter((o) => o.name === 'KI_Gelaende'));
 
@@ -1246,7 +1266,10 @@ $('ki-datei').addEventListener('change', async (e) => { // neu beginnen: erstes 
     zustand.umgebung = 'ki'; zustand.ki.z = null; zustand.ki.x = 0; zustand.schnitt = 'aus';
     neuBauen(true); kiFotoansicht(0);
     const auto = neu.length > 1 ? await kiVerknuepfen(false) : 0;
-    zeigeMeldung(`3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ', Bildwinkel aus den Fotodaten' : ''}${neu.length > 1 ? (auto ? `, ${auto} Foto(s) automatisch verknüpft` : ausGps ? ', Lage aus GPS und Kompass' : ' – bitte die Lage im Lageplan einstellen') : ''}. Für exakten Maßstab: „Maßstab nachmessen“.`);
+    const text = `3D-Garten aus ${neu.length} Foto(s) erstellt${neu[0].exif?.f35 ? ', Bildwinkel aus den Fotodaten' : ''}${neu.length > 1 ? (auto ? `, ${auto} Foto(s) automatisch verknüpft` : ausGps ? ', Lage aus GPS und Kompass' : ' – bitte die Lage im Lageplan einstellen') : ''}`;
+    zeigeMeldung(text + '. Verdeckte Bereiche werden jetzt noch mit KI ergänzt …');
+    const gefuellt = await kiVerdecktesFuellen();
+    zeigeMeldung(text + (gefuellt ? ', verdeckte Bereiche mit KI ergänzt' : '') + '. Für exakten Maßstab: „Maßstab nachmessen“.');
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
 });
 $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto vom selben Standpunkt hinzufügen
@@ -1261,6 +1284,7 @@ $('ki-datei-weitere').addEventListener('change', async (e) => { // weiteres Foto
     kiLageAusFotodaten();
     ki.schluessel = ''; neuBauen(); kiFotoansicht(ki.bilder.length - 1);
     const auto = await kiVerknuepfen(false);
+    await kiVerdecktesFuellen();
     zeigeMeldung(auto ? `Foto hinzugefügt und automatisch mit den anderen verknüpft (${auto} Foto(s) angelegt). Im Lageplan bei Bedarf nachschieben.`
       : ki.bilder.every((b) => b.exif?.lat !== undefined) ? 'Foto hinzugefügt, Lage aus GPS und Kompass. Im Lageplan bei Bedarf nachschieben.' : 'Foto hinzugefügt. Im Lageplan Standort und Blickrichtung einstellen.');
   } catch (err) { console.error(err); zeigeMeldung('Die KI-Berechnung ist fehlgeschlagen: ' + (err.message || err)); }
