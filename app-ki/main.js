@@ -14,7 +14,7 @@ import { GTAOPass } from './lib/postprocessing/GTAOPass.js';
 import { SMAAPass } from './lib/postprocessing/SMAAPass.js';
 import { OutputPass } from './lib/postprocessing/OutputPass.js';
 import { tiefeSchaetzen } from './tiefe.js';
-import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern, kameraMatrix, hintergrundMaske } from './gelaende.js';
+import { KI_STANDARD, kalibrieren, gelaendeBauen, poolAussparung, bodenAbstand, tiefeVerfeinern, hintergrundMaske } from './gelaende.js';
 import { lamaFuellen } from './fuellen.js';
 import { exifLesen, bildwinkelAusF35, gpsZuMeter, istHeic } from './exif.js';
 import { fotosVerknuepfen } from './verknuepfen.js';
@@ -199,9 +199,39 @@ function kiLageAnwenden() {
   ki.bilder.forEach((b, i) => {
     const y = THREE.MathUtils.degToRad(b.yaw);
     u.uKams.value[i].set(b.pos.x, b.pos.z, Math.sin(y), -Math.cos(y));
-    u.uKamCos.value[i] = Math.cos(THREE.MathUtils.degToRad(kiBildwinkel(b) / 2 + 2)); // bis an den Bildrand zuständig
-    const g = ki.gelaende[i]; if (g && b.kalib) kameraMatrix(g.gruppe, b.kalib, zustand.ki.hoehe, u.uKamMat.value[i]); // für die Sichtprüfung
   });
+  kiZeigeAnwenden();
+}
+/**
+ * Welches Foto sichtbar ist: immer genau eines (ki.zeige.a). Beim Wechsel wird zum nächsten (b) fein gerastert
+ * überblendet (m = Anteil von b). So werden nie Bruchstücke verschiedener Fotos zusammengewürfelt.
+ */
+function kiZeigeAnwenden() {
+  const u = ki.uniforms; if (!u) return;
+  const z = ki.zeige ?? (ki.zeige = { a: kiFotoIndex, b: kiFotoIndex, m: 0 });
+  const n = Math.max(1, ki.bilder.length), a = Math.min(z.a, n - 1), b = Math.min(z.b, n - 1);
+  u.uZeigeA.value = a; u.uZeigeB.value = b; u.uMisch.value = a === b ? 0 : z.m;
+}
+function kiZeige(a, b = a, m = 0) { ki.zeige = { a, b, m }; kiZeigeAnwenden(); }
+/** Freies Umschauen: das Foto wählen, dessen Standort und Blickrichtung am besten zur Kamera passen; weich wechseln. */
+let kiWechsel = null;
+function kiFreiAuswahl(jetzt) {
+  if (zustand.umgebung !== 'ki' || !zustand.ki.freiUmschauen || kiFahrt || ki.bilder.length < 2 || !ki.uniforms) return false;
+  if (kiWechsel) {
+    const t = Math.min(1, (jetzt - kiWechsel.start) / 350);
+    kiZeige(kiWechsel.von, kiWechsel.nach, t);
+    if (t >= 1) { kiZeige(kiWechsel.nach); kiFotoIndex = kiWechsel.nach; kiWechsel = null; kiVorschauLeiste(); }
+    return true;
+  }
+  const blick = new THREE.Vector3(); camera.getWorldDirection(blick);
+  let best = kiFotoIndex, bs = -Infinity;
+  ki.bilder.forEach((b, i) => {
+    const y = THREE.MathUtils.degToRad(b.yaw);
+    const s = blick.x * Math.sin(y) - blick.z * Math.cos(y) - 0.06 * Math.hypot(camera.position.x - b.pos.x, camera.position.z - b.pos.z);
+    if (s > bs + (i === kiFotoIndex ? 0 : 0.05)) { bs = s; best = i; } // kleiner Vorteil fürs aktuelle Foto: kein Flackern
+  });
+  if (best !== ki.zeige?.a) { kiWechsel = { von: ki.zeige?.a ?? kiFotoIndex, nach: best, start: jetzt }; return true; }
+  return false;
 }
 /** Lage der Fotos aus GPS und Kompass (iPhone): Hauptfoto im Ursprung, Blick nach −z; die anderen relativ dazu. */
 function kiLageAusFotodaten() {
@@ -288,23 +318,29 @@ function kiGrenzen() {
   if (frei) { controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; controls.minDistance = 0.6; controls.maxDistance = 45; controls.minPolarAngle = zustand.umgebung === 'ki' ? 0.35 : 0; controls.maxPolarAngle = Math.PI / 2 - 0.03; return; }
   const { pos, ziel } = kiAnsichtZiel(kiFotoIndex), d = pos.clone().sub(ziel);
   const az = Math.atan2(d.x, d.z), pol = Math.acos(d.y / d.length()), l = d.length();
-  controls.minAzimuthAngle = az - 0.35; controls.maxAzimuthAngle = az + 0.35;      // ca. ±20° seitlich
-  controls.minPolarAngle = Math.max(0.2, pol - 0.25); controls.maxPolarAngle = Math.min(Math.PI / 2 - 0.05, pol + 0.12);
-  controls.minDistance = l * 0.55; controls.maxDistance = l * 1.25;
+  // Die Kamera darf sich nur wenig vom Fotostandpunkt entfernen (ca. 1 m seitlich, 0,6 m hoch/runter, 2,5 m vor,
+  // 0,5 m zurück) – weiter weg zeigt ein Foto zwangsläufig Verzerrungen. Gedreht wird um einen fernen Blickpunkt,
+  // deshalb sind die Winkel klein, obwohl sich die Ansicht deutlich bewegt.
+  const seitlich = Math.min(0.35, 1.0 / l), hoch = Math.min(0.25, 0.6 / l);
+  controls.minAzimuthAngle = az - seitlich; controls.maxAzimuthAngle = az + seitlich;
+  controls.minPolarAngle = Math.max(0.2, pol - hoch); controls.maxPolarAngle = Math.min(Math.PI / 2 - 0.05, pol + hoch);
+  controls.minDistance = Math.max(l * 0.55, l - 2.5); controls.maxDistance = l + 0.5;
 }
 let kiFahrt = null; // laufende Kamerafahrt zwischen zwei Fotoansichten
 /** Kamera auf den Standpunkt von Foto i setzen (Ansicht = Foto); mit weicher Fahrt, wenn sofort = false. */
 function kiFotoansicht(i = kiFotoIndex, sofort = true) {
   const b = ki.bilder[i]; if (!b?.kalib) return;
-  kiFotoIndex = i;
+  const vorher = ki.zeige?.a ?? kiFotoIndex;
+  kiFotoIndex = i; kiWechsel = null;
   const z = kiAnsichtZiel(i);
   if (!sofort) {
-    kiFahrt = { start: performance.now(), dauer: 900, von: { pos: camera.position.clone(), ziel: controls.target.clone(), fov: camera.fov }, nach: z, i };
+    kiFahrt = { start: performance.now(), dauer: 900, von: { pos: camera.position.clone(), ziel: controls.target.clone(), fov: camera.fov }, nach: z, i, vonFoto: vorher };
     controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity; controls.minPolarAngle = 0; controls.maxPolarAngle = Math.PI; controls.minDistance = 0; controls.maxDistance = Infinity;
     rendern(); return;
   }
+  kiZeige(i);
   camera.fov = z.fov; camera.position.copy(z.pos); controls.target.copy(z.ziel); camera.lookAt(controls.target);
-  kiGrenzen(); controls.update(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie(); kiVorschauLeiste();
+  kiGrenzen(); controls.update(); kiRollAnwenden(); camera.updateProjectionMatrix(); kiFotoblick = true; groesseAnpassen(); rendern(); kiHorizontLinie(); kiVorschauLeiste();
   if ($('optionen').childElementCount) zeichnePanel(); // Hinweistext passt zur aktuellen Ansicht
 }
 /** Kamerafahrt fortschreiben (aus der Bildschleife). */
@@ -315,8 +351,24 @@ function kiFahrtSchritt(jetzt) {
   controls.target.lerpVectors(kiFahrt.von.ziel, kiFahrt.nach.ziel, e);
   camera.fov = THREE.MathUtils.lerp(kiFahrt.von.fov, kiFahrt.nach.fov, e); camera.updateProjectionMatrix();
   camera.lookAt(controls.target);
+  kiFahrt.e = e;
+  kiZeige(kiFahrt.vonFoto, kiFahrt.i, THREE.MathUtils.smoothstep(t, 0.2, 0.8)); // unterwegs vom alten zum neuen Foto überblenden
   if (t >= 1) { const i = kiFahrt.i; kiFahrt = null; kiFotoansicht(i, true); }
   return true;
+}
+/**
+ * Schräg gehaltenes Foto: Das 3D-Modell ist waagerecht ausgerichtet, das Foto aber um einige Zehntelgrad gekippt.
+ * In der Präsentation wird die Kamera genauso gekippt – dann deckt sich die Ansicht exakt mit dem Foto, und an den
+ * Bildrändern erscheinen keine fremden Streifen. Wird nach jedem Ausrichten der Kamera neu angewendet.
+ */
+function kiRollAnwenden() {
+  if (zustand.umgebung !== 'ki' || zustand.ki.freiUmschauen || !ki.bilder.length) { if (camera.zoom !== 1) { camera.zoom = 1; camera.updateProjectionMatrix(); } return; }
+  const r = (i) => ki.bilder[i]?.kalib?.roll ?? 0;
+  const roll = kiFahrt ? THREE.MathUtils.lerp(r(kiFahrt.vonFoto), r(kiFahrt.i), kiFahrt.e ?? 0) : r(kiFotoIndex);
+  if (roll) { camera.rotateZ(-roll); camera.updateMatrixWorld(); }
+  // Weg vom Fotostandpunkt leicht hineinzoomen (bis 12 %): Die Bildränder, an denen das Foto endet, bleiben außen vor
+  const b = ki.bilder[kiFotoIndex], zoom = kiFahrt || !b ? 1 : 1 + 0.12 * Math.min(1, camera.position.distanceTo(new THREE.Vector3(b.pos.x, zustand.ki.hoehe, b.pos.z)) / 1.0);
+  if (Math.abs(camera.zoom - zoom) > 1e-4) { camera.zoom = zoom; camera.updateProjectionMatrix(); }
 }
 /** Vorschaubilder der Fotos unten im Bild: antippen = zu dieser Ansicht fahren. */
 function kiVorschauLeiste() {
@@ -416,7 +468,6 @@ function composerHolen() {
 }
 /** Ein Bild rendern: mit Nachbearbeitung (Hoch/Ultra) oder direkt. Im Foto-Modus direkt (transparenter Hintergrund). */
 function bildRendern() {
-  if (ki.uniforms) ki.uniforms.uBetrachter.value.copy(camera.position); // blickabhängige Fotowahl im KI-Garten
   const q = QUALITAET[qualitaet];
   if (q.post && zustand.umgebung !== 'foto') {
     composerHolen(); gtao.enabled = zustand.umgebung !== 'ki'; koernung.enabled = zustand.umgebung === 'ki' || zustand.umgebung === 'garten3d';
@@ -469,7 +520,9 @@ renderer.setAnimationLoop((zeit) => {
   }
   if (kiFahrtSchritt(performance.now())) brauchtRender = true;
   else if (zustand.umgebung !== 'foto' && controls.update()) brauchtRender = true;
-  if (brauchtRender) { if (ki.uniforms) ki.uniforms.uBetrachter.value.copy(camera.position); bildRendern(); brauchtRender = false; }
+  kiRollAnwenden();
+  if (kiFreiAuswahl(performance.now())) brauchtRender = true;
+  if (brauchtRender) { bildRendern(); brauchtRender = false; }
 });
 
 // ---------- Zustand ----------

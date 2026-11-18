@@ -130,74 +130,58 @@ export function bodenAbstand(k, p, v = 0.8) {
 const poolUniforms = () => ({
   uPoolInv: { value: new THREE.Matrix4() }, uHalb: { value: new THREE.Vector2(3, 2) }, uRadius: { value: 0 },
   uRand: { value: 1.2 }, uAktiv: { value: 0 },
-  // mehrere Fotos: Kamerastandorte (x, z, Blick-x, Blick-z) und halber Bildwinkel als Kosinus
-  uKams: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uKamCos: { value: [0, 0, 0, 0] }, uKamAnzahl: { value: 0 },
-  uKamHoehe: { value: 1.6 }, uBetrachter: { value: new THREE.Vector3() },
-  // Sichtprüfung: je Foto Welt→Kamera-Matrix, Bildwinkel (tan) und Tiefenkarte in Metern
-  uKamMat: { value: [0, 1, 2, 3].map(() => new THREE.Matrix4()) }, uKamTan: { value: [0, 1, 2, 3].map(() => new THREE.Vector2(1, 1)) },
-  uTiefe0: { value: null }, uTiefe1: { value: null }, uTiefe2: { value: null }, uTiefe3: { value: null },
+  // mehrere Fotos: Kamerastandorte (x, z, Blick-x, Blick-z)
+  uKams: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uKamAnzahl: { value: 0 }, uKamHoehe: { value: 1.6 },
+  // welches Foto gezeigt wird: A, beim Überblenden zusätzlich B mit Anteil uMisch (0 = nur A, 1 = nur B)
+  uZeigeA: { value: 0 }, uZeigeB: { value: 0 }, uMisch: { value: 0 },
 });
-/** Uniforms eines Fotos: gemeinsame Werte (Pool, Kameras) plus eigene Nummer. */
-export const fotoUniforms = (gemeinsam, nr, hinten = false) => ({ ...gemeinsam, uIch: { value: nr }, uHinten: { value: hinten ? 1 : 0 } });
+/** Uniforms eines Fotos: gemeinsame Werte (Pool, Kameras, Auswahl) plus eigene Nummer und Schicht. */
+export const fotoUniforms = (gemeinsam, nr, schicht = {}) => ({ ...gemeinsam, uIch: { value: nr }, uVorhang: { value: schicht.vorhang ? 1 : 0 } });
+/**
+ * Shader-Ergänzung für alle Schichten eines Fotos:
+ *  – Immer nur EIN Foto ist sichtbar (beim Wechsel zwei, fein gerastert überblendet). Es werden nie Bruchstücke
+ *    verschiedener Fotos gemischt – die passen in der Tiefe nie ganz genau zusammen und wirken wie Fremdkörper.
+ *  – Becken-Aussparung und Einebnung: Bodenpunkte rund um den Pool werden ENTLANG DES SEHSTRAHLS der Fotokamera
+ *    auf Bodenhöhe gelegt. So bleibt das Foto aus seiner Ansicht Bildpunkt für Bildpunkt unverändert, egal wo der
+ *    Pool steht – nichts „wandert“ beim Verschieben mit.
+ *  – „Vorhänge“ (Flächen an Tiefensprüngen, z. B. zwischen Busch und Rasen dahinter) sind nur sichtbar, solange man
+ *    nahe der Fotoposition schaut (Präsentation); weiter weg verschwinden sie, dahinter liegt der ergänzte Hintergrund.
+ */
 function poolShader(mat, uniforms) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
     const kopf = `
       uniform mat4 uPoolInv; uniform vec2 uHalb; uniform float uRadius; uniform float uRand; uniform float uAktiv;
-      uniform vec4 uKams[4]; uniform float uKamCos[4]; uniform int uKamAnzahl; uniform int uIch;
-      uniform float uKamHoehe; uniform vec3 uBetrachter;
-      uniform mat4 uKamMat[4]; uniform vec2 uKamTan[4];
-      uniform sampler2D uTiefe0; uniform sampler2D uTiefe1; uniform sampler2D uTiefe2; uniform sampler2D uTiefe3;
-      varying vec3 vWelt;   // Lage im Raum (rund um den Pool eingeebnet)
-      varying vec3 vWelt0;  // ursprüngliche Lage aus dem Foto – für die Sichtprüfung, damit sie nicht vom Pool abhängt
-      uniform float uHinten; // 1 = Hintergrundebene (aufgefüllt), 0 = Foto selbst
-      // Was sagt Foto j über den Punkt w?  1 = liegt auf der Fläche, die das Foto zeigt;  2 = das Foto sieht durch w
-      // hindurch auf etwas Ferneres (dort ist also nichts);  0 = keine Aussage (außerhalb des Bildes oder verdeckt).
-      // Vergleich mit Nachbarn in der Tiefenkarte, damit es an Kanten nicht flackert.
-      float aussage(sampler2D t, mat4 M, vec2 tn, vec3 w) {
-        vec4 c = M * vec4(w, 1.0); float z = -c.z; if (z < 0.2) return 0.0;
-        vec2 uv = vec2((c.x / z / tn.x + 1.0) * 0.5, (1.0 - c.y / z / tn.y) * 0.5);
-        if (uv.x < 0.02 || uv.x > 0.98 || uv.y < 0.02 || uv.y > 0.98) return 0.0;
-        vec2 px = 1.5 / vec2(textureSize(t, 0));
-        float a = texture2D(t, uv).r, b = texture2D(t, uv + vec2(px.x, 0.0)).r, d = texture2D(t, uv - vec2(px.x, 0.0)).r;
-        float e = texture2D(t, uv + vec2(0.0, px.y)).r, f = texture2D(t, uv - vec2(0.0, px.y)).r;
-        #define NAH(s) (abs(z - (s)) <= (s) * 0.12 + 0.35)
-        if (NAH(a) || NAH(b) || NAH(d) || NAH(e) || NAH(f)) return 1.0;
-        float lo = min(a, min(min(b, d), min(e, f)));
-        return z < lo * 0.85 - 0.3 ? 2.0 : 0.0; // deutlich vor allem, was das Foto dort sieht: freier Raum
-      }
-      // Wie gut passt die Blickrichtung von Foto j zu der des Betrachters (1 = gleich)?
-      float passt(int j, vec3 w, vec3 zuBetr) { return dot(normalize(vec3(uKams[j].x, uKamHoehe, uKams[j].y) - w), zuBetr); }
-      // Soll dieses Foto (uIch) den Punkt w weglassen? Ja, wenn ein Foto, dessen Blickrichtung besser zum Betrachter
-      // passt, dort selbst eine Fläche zeigt oder durch w hindurchsieht (dann wäre w ein schwebendes Bruchstück).
-      // Die Hintergrundebene weicht jedem Foto, das echte Bildinformation zu dieser Stelle hat.
-      bool weglassen(vec3 w) {
-        vec3 zuBetr = normalize(uBetrachter - w);
-        float v[4];
-        v[0] = uKamAnzahl > 0 ? aussage(uTiefe0, uKamMat[0], uKamTan[0], w) : 0.0;
-        v[1] = uKamAnzahl > 1 ? aussage(uTiefe1, uKamMat[1], uKamTan[1], w) : 0.0;
-        v[2] = uKamAnzahl > 2 ? aussage(uTiefe2, uKamMat[2], uKamTan[2], w) : 0.0;
-        v[3] = uKamAnzahl > 3 ? aussage(uTiefe3, uKamMat[3], uKamTan[3], w) : 0.0;
-        float ich = 0.0, sIch = 0.0;
-        for (int j = 0; j < 4; j++) if (j == uIch) { ich = v[j]; sIch = passt(j, w, zuBetr); }
-        bool echt = uHinten < 0.5 || ich == 1.0; // Foto selbst – oder Hintergrund, wo das Foto nichts verdeckt
-        for (int j = 0; j < 4; j++) { if (j >= uKamAnzahl) break;
-          if (j == uIch || v[j] < 0.5) continue;
-          if (!echt || passt(j, w, zuBetr) > sIch) return true; }
-        return false; }
+      uniform vec4 uKams[4]; uniform int uKamAnzahl; uniform float uKamHoehe; uniform int uIch;
+      uniform int uZeigeA; uniform int uZeigeB; uniform float uMisch; uniform float uVorhang;
+      varying vec3 vWelt;
+      vec3 fotoKamera() { return vec3(uKams[uIch].x, uKamHoehe, uKams[uIch].y); }
+      float rausch(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
       float poolSdf(vec3 w) { vec2 q = (uPoolInv * vec4(w, 1.0)).xz; vec2 d = abs(q) - (uHalb - uRadius); return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - uRadius; }`;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + kopf)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec3 w0 = (modelMatrix * vec4(transformed, 1.0)).xyz; vWelt0 = w0;
-        if (uAktiv > 0.5) { // nur kleine Bodenwellen rund um den Pool einebnen – Büsche, Kübel usw. bleiben stehen
+        if (uAktiv > 0.5) { // Boden rund um den Pool einebnen – entlang des Sehstrahls der Fotokamera
+          vec3 w0 = (modelMatrix * vec4(transformed, 1.0)).xyz;
           float f = 1.0 - smoothstep(0.0, uRand, poolSdf(w0));
-          if (abs(w0.y) < 0.25) transformed.y = mix(transformed.y, transformed.y - w0.y, f);
+          if (f > 0.0 && abs(w0.y) < 0.25) {
+            vec3 c = fotoKamera(); vec3 wb = c + (w0 - c) * (c.y / max(c.y - w0.y, 0.001));
+            transformed += transpose(mat3(modelMatrix)) * ((wb - w0) * f);
+          }
         }`)
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWelt = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + kopf)
-      .replace('void main() {', 'void main() {\n  if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken\n  if (uKamAnzahl > 1 && weglassen(vWelt0)) discard; // ein passenderes Foto zeigt hier etwas anderes');
+      .replace('void main() {', `void main() {
+        if (uAktiv > 0.5 && poolSdf(vWelt) < 0.0 && vWelt.y < 0.6) discard; // Loch für das Becken
+        if (uKamAnzahl > 1) { // nur das gewählte Foto (beim Wechsel: zwei, gerastert überblendet)
+          if (uIch != uZeigeA && uIch != uZeigeB) discard;
+          if (uZeigeA != uZeigeB && ((uIch == uZeigeB) != (rausch(gl_FragCoord.xy) < uMisch))) discard;
+        }
+        if (uVorhang > 0.5) { // Vorhang: nur nahe der Fotoposition (bis ca. 4°, ab 8° Abweichung ganz weg)
+          float k = dot(normalize(vWelt - fotoKamera()), normalize(vWelt - cameraPosition));
+          if (rausch(gl_FragCoord.xy + 31.0) > smoothstep(0.99027, 0.99756, k)) discard;
+        }`);
   };
-  mat.customProgramCacheKey = () => 'ki-gelaende-6';
+  mat.customProgramCacheKey = () => 'ki-gelaende-8';
 }
 
 /**
@@ -228,6 +212,8 @@ export function tiefeVerfeinern(t, img) {
  * Beim Umschauen werden Flächen seitlich hinter Bäumen, Hecken und Hauskanten frei; der Boden (in der Zeile
  * gleich weit weg) bleibt dabei unverändert und wird nicht fälschlich als Vordergrund behandelt.
  */
+/** Filterbreite für den Hintergrund – gleich für Maske (KI-Füllung) und Hintergrund-Geometrie. */
+const hgRadius = (t) => Math.max(6, Math.round(t.breite / 30));
 function hintergrundTiefe(t, radius) {
   const w = t.breite, h = t.hoehe, a = t.daten, aus = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = Infinity; for (let k = -radius; k <= radius; k++) { const xx = Math.min(w - 1, Math.max(0, x + k)); m = Math.min(m, a[y * w + xx]); } aus[y * w + x] = m; }
@@ -244,7 +230,7 @@ function hintergrundTiefe(t, radius) {
  */
 export function hintergrundMaske(img, t) {
   // breiterer Filter als für die Hintergrundebene: auch Büsche, Kübel und Pfosten gelten als „davor“
-  const hg = hintergrundTiefe(t, Math.max(6, Math.round(t.breite / 30))), schwelle = 0.04 * Math.max(1e-6, t.max - t.min);
+  const hg = hintergrundTiefe(t, hgRadius(t)), schwelle = 0.04 * Math.max(1e-6, t.max - t.min);
   const w = Math.min(512, t.breite), h = Math.round((w * t.hoehe) / t.breite);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
@@ -275,29 +261,13 @@ function fotoAuffuellen(img, t) {
   return c;
 }
 
-/** Tiefenkarte (planare Tiefe in Metern) als Textur für die Sichtprüfung im Shader. */
-function tiefenTextur(t, k, p, breite = 256) {
-  const hoehe = Math.max(8, Math.round((breite * t.hoehe) / t.breite)), d = new Float32Array(breite * hoehe);
-  for (let y = 0; y < hoehe; y++) for (let x = 0; x < breite; x++) d[y * breite + x] = tiefeBei(t, k, p, x / (breite - 1), y / (hoehe - 1));
-  const tex = new THREE.DataTexture(d, breite, hoehe, THREE.RedFormat, THREE.FloatType);
-  tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.needsUpdate = true; // Zeile 0 = oberer Bildrand
-  return tex;
-}
-
-/** Welt→Kamera-Matrix eines Fotos (Kamera: Blick nach −z, x rechts, y oben) aus seiner Gelände-Gruppe. */
-export function kameraMatrix(gruppe, k, hoehe, ziel = new THREE.Matrix4()) {
-  gruppe.updateMatrixWorld();
-  const lokal = new THREE.Matrix4().makeTranslation(0, hoehe, 0)
-    .multiply(new THREE.Matrix4().makeRotationX(k.neigung)).multiply(new THREE.Matrix4().makeRotationZ(-(k.roll ?? 0)));
-  return ziel.multiplyMatrices(gruppe.matrixWorld, lokal).invert();
-}
-
 /** Gitter-Geometrie aus Tiefe (gemeinsam für Vorder- und Hintergrundebene). */
-function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
+function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1, rand = 0) {
   const pos = new Float32Array((nx + 1) * (ny + 1) * 3), uv = new Float32Array((nx + 1) * (ny + 1) * 2), zs = new Float32Array((nx + 1) * (ny + 1));
   const P = new THREE.Vector3();
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-    const u = uVon + ((uBis - uVon) * i) / nx, v = j / ny, idx = j * (nx + 1) + i;
+    // rand > 0: Gitter reicht über den Bildrand hinaus (Randfarben werden fortgesetzt) – beim Umschauen kein Loch am Rand
+    const u = uVon - rand + ((uBis - uVon + 2 * rand) * i) / nx, v = -rand + ((1 + 2 * rand) * j) / ny, idx = j * (nx + 1) + i;
     const z = tiefeBei(t, k, p, u, v) * abstandFaktor; zs[idx] = z;
     weltPunkt(k, p, u, v, z, P);
     pos.set([P.x, P.y, P.z], idx * 3); uv.set([u, 1 - v], idx * 2);
@@ -318,15 +288,21 @@ function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
     if (Math.abs(n.dot(blick)) < 0.14) return false;
     return hi / lo < 1.12 + 0.003 * lo;
   };
+  const vorhang = []; // an Tiefensprüngen: eigene Geometrie, nur aus der Fotoposition sichtbar
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
-    if (ok(a, c, b)) ind.push(a, c, b);
-    if (ok(b, c, d)) ind.push(b, c, d);
+    (ok(a, c, b) ? ind : vorhang).push(a, c, b);
+    (ok(b, c, d) ? ind : vorhang).push(b, c, d);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(ind);
+  if (trennen) {
+    const v = new THREE.BufferGeometry();
+    v.setAttribute('position', geo.attributes.position); v.setAttribute('uv', geo.attributes.uv); v.setIndex(vorhang);
+    geo.userData.vorhang = v;
+  }
   return geo;
 }
 
@@ -339,10 +315,8 @@ function gitter(t, k, p, nx, ny, uVon, uBis, trennen, abstandFaktor = 1) {
 export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, opts = {}) {
   const seitenverh = img.naturalWidth / img.naturalHeight, uVon = opts.uVon ?? 0, uBis = opts.uBis ?? 1;
   const nx = Math.max(8, Math.round(aufloesung * (uBis - uVon))), ny = Math.max(2, Math.round(aufloesung / seitenverh));
-  const gemeinsam = opts.uniforms ?? poolUniforms(), uniforms = fotoUniforms(gemeinsam, opts.nr ?? 0);
+  const nr = opts.nr ?? 0, gemeinsam = opts.uniforms ?? poolUniforms(), uniforms = fotoUniforms(gemeinsam, nr);
   const gruppe = new THREE.Group(), texturen = [];
-  const nr = opts.nr ?? 0, tiefeTex = tiefenTextur(t, k, p); texturen.push(tiefeTex);
-  gemeinsam['uTiefe' + nr].value = tiefeTex; gemeinsam.uKamTan.value[nr].set(k.tanX, k.tanY);
 
   // Vorderebene
   const geo = gitter(t, k, p, nx, ny, uVon, uBis, true);
@@ -350,19 +324,21 @@ export function gelaendeBauen(img, t, k, p, schattenStaerke, aufloesung = 300, o
   const foto = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, side: THREE.DoubleSide });
   poolShader(foto, uniforms);
   const vorn = new THREE.Mesh(geo, foto); vorn.name = 'KI_Gelaende'; vorn.renderOrder = -1;
+  const vorhangMat = foto.clone(); poolShader(vorhangMat, fotoUniforms(gemeinsam, nr, { vorhang: true }));
+  const vorhang = new THREE.Mesh(geo.userData.vorhang, vorhangMat); vorhang.name = 'KI_Vorhang'; vorhang.renderOrder = -1;
   const schatten = new THREE.ShadowMaterial({ opacity: schattenStaerke, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   poolShader(schatten, uniforms);
   const schattenMesh = new THREE.Mesh(geo, schatten); schattenMesh.receiveShadow = true; schattenMesh.name = 'KI_Gelaende_Schatten';
-  gruppe.add(vorn, schattenMesh);
+  gruppe.add(vorn, vorhang, schattenMesh);
 
   // Hintergrundebene: Vordergrund weggenommen, Foto dort aufgefüllt, etwas weiter hinten
   if (opts.hintergrund !== false) {
-    const hg = hintergrundTiefe(t, Math.max(4, Math.round(t.breite / 60)));
+    const hg = hintergrundTiefe(t, hgRadius(t));
     // Textur: von der KI ergänztes Bild (opts.fuellBild, wenn schon berechnet), sonst einfach von außen nach innen verwischt
     const hgTex = new THREE.CanvasTexture(opts.fuellBild ?? fotoAuffuellen(img, t)); hgTex.colorSpace = THREE.SRGBColorSpace; texturen.push(hgTex);
     const hgMat = new THREE.MeshBasicMaterial({ map: hgTex, toneMapped: false, side: THREE.DoubleSide });
-    poolShader(hgMat, fotoUniforms(gemeinsam, opts.nr ?? 0, true));
-    const hinten = new THREE.Mesh(gitter(hg, k, p, Math.round(nx / 2), Math.round(ny / 2), uVon, uBis, false, 1.02), hgMat);
+    poolShader(hgMat, fotoUniforms(gemeinsam, nr));
+    const hinten = new THREE.Mesh(gitter(hg, k, p, Math.round(nx / 2), Math.round(ny / 2), uVon, uBis, false, 1.02, 0.15), hgMat);
     hinten.name = 'KI_Hintergrund'; hinten.renderOrder = -1.2;
     gruppe.add(hinten);
   }
